@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="placeholder">
+  <div class="placeholder__mark" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="2.5"/><ellipse cx="12" cy="12" rx="10" ry="4.5"/><ellipse cx="12" cy="12" rx="4.5" ry="10"/></svg>
+  </div>
+  <h1 class="placeholder__title">{{ title }}</h1>
+  <p class="placeholder__text">{{ blurb }}</p>
+  <p class="placeholder__note">We'll design this page next.</p>
+</div>
+{% endblock %}

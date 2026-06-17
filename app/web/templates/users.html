@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Users · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left">
+    <a class="back-link" href="/settings">← Settings</a>
+    <h1 class="page-title">Users</h1>
+  </div>
+</div>
+
+<section class="form-card">
+  <h2 class="card-title">Accounts</h2>
+  <div class="accounts-list">
+    {% for u in users %}
+    <div class="acct {{ 'is-off' if not u.is_active }}">
+      <div class="acct__main">
+        <span class="acct__chan acct__chan--{{ 'email' if u.role == 'admin' else 'telegram' }}">{{ u.role }}</span>
+        <span class="acct__label">{{ u.display_name or u.username }}</span>
+        <span class="acct__dest">@{{ u.username }}</span>
+        {% if u.last_login_at %}<span class="field__hint">last in {{ u.last_login_at.strftime('%b %d, %H:%M') }}</span>{% endif %}
+        {% if not u.is_active %}<span class="acct__off">disabled</span>{% endif %}
+      </div>
+      <div class="acct__actions">
+        <form method="post" action="/users/{{ u.id }}/active"><button class="btn btn--sm btn--ghost" type="submit">{{ 'Enable' if not u.is_active else 'Disable' }}</button></form>
+      </div>
+      <details class="acct__edit">
+        <summary>Manage</summary>
+        <div class="acct__editform">
+          <form method="post" action="/users/{{ u.id }}/role" class="field__inline">
+            <select name="role">
+              <option value="user" {{ 'selected' if u.role == 'user' }}>User</option>
+              <option value="admin" {{ 'selected' if u.role == 'admin' }}>Admin</option>
+            </select>
+            <button class="btn btn--sm" type="submit">Set role</button>
+          </form>
+          <form method="post" action="/users/{{ u.id }}/reset-password" class="field__inline">
+            <input type="password" name="password" placeholder="New password (min 8)" autocomplete="new-password" />
+            <button class="btn btn--sm" type="submit">Reset password</button>
+          </form>
+          <div class="acct__edit-row">
+            <form method="post" action="/users/{{ u.id }}/delete" data-confirm="Delete this user and all of their tracked products? This cannot be undone.">
+              <button class="btn btn--sm is-danger" type="submit">Delete user</button>
+            </form>
+          </div>
+        </div>
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="field__hint">There {{ 'is' if admin_count == 1 else 'are' }} {{ admin_count }} active admin{{ '' if admin_count == 1 else 's' }}. The last admin can’t be demoted, disabled, or deleted.</p>
+</section>
+
+<form class="form-card stack" method="post" action="/users/add">
+  <h2 class="card-title">Add user</h2>
+  <div class="detail-grid">
+    <div class="field"><label>Username</label><input type="text" name="username" placeholder="At least 3 characters" autocomplete="off" /></div>
+    <div class="field"><label>Role</label>
+      <select name="role"><option value="user">User</option><option value="admin">Admin</option></select>
+    </div>
+  </div>
+  <div class="field"><label>Initial password</label><input type="password" name="password" placeholder="At least 8 characters" autocomplete="new-password" /></div>
+  <p class="field__hint">New users are asked to change their password after first sign-in.</p>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Create user</button></div>
+</form>
+
+<section class="form-card">
+  <h2 class="card-title">Security audit log</h2>
+  {% if audit_events %}
+  <div class="audit-list">
+    {% for e in audit_events %}
+    <div class="audit-row">
+      <span class="audit-when mono">{{ e.created_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="audit-action">{{ audit_labels.get(e.action, e.action) }}</span>
+      <span class="audit-actor">{{ e.actor }}</span>
+      {% if e.detail %}<span class="audit-detail">{{ e.detail }}</span>{% endif %}
+      {% if e.ip %}<span class="audit-ip mono">{{ e.ip }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="field__hint">Showing the most recent {{ audit_events|length }} event{{ '' if audit_events|length == 1 else 's' }}.</p>
+  {% else %}
+  <p class="field__hint">No security events recorded yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

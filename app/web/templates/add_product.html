@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Add Product · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left">
+    <a class="back-link" href="/price-tracking">← Price Tracking</a>
+    <h1 class="page-title">Add a product</h1>
+  </div>
+</div>
+
+{% if duplicate %}
+<div class="notice notice--warn">
+  You're already tracking this URL as
+  <a href="/products/{{ duplicate.id }}"><strong>{{ duplicate.name }}</strong></a>.
+  Change the URL below, or open the existing product to add another store to it.
+</div>
+{% endif %}
+{% if error %}<div class="notice notice--warn">{{ error }}</div>{% endif %}
+
+<form class="form-card" method="post" action="/price-tracking/add" id="add-form">
+
+  <section class="field">
+    <label for="url">Product URL</label>
+    <input type="url" id="url" name="url" inputmode="url" placeholder="https://store.example.com/product/…"
+           value="{{ form.url or normalized_url or '' }}" autocomplete="off" />
+    <p class="field__hint">Paste a link to the product page at any store.</p>
+  </section>
+
+  {% if preview is not none %}
+    {% if preview.ok %}
+    <section class="preview-card">
+      <div class="preview-card__media">
+        {% if preview.image_url %}<img src="{{ preview.image_url }}" alt="" />{% else %}<span class="preview-card__noimg">No image</span>{% endif %}
+      </div>
+      <div class="preview-card__body">
+        <span class="preview-card__tag">Preview · {{ preview.store_name }}</span>
+        <h3>{{ preview.name }}</h3>
+        <div class="preview-card__row">
+          <span class="price">{% if preview.price is not none %}{{ preview.currency or '' }} {{ '%.2f'|format(preview.price) }}{% else %}Price not found{% endif %}</span>
+          {% if preview.in_stock is true %}<span class="stock-badge stock-badge--in">In stock</span>
+          {% elif preview.in_stock is false %}<span class="stock-badge stock-badge--out">Out of stock</span>{% endif %}
+        </div>
+        {% if preview.model_number %}<div class="preview-card__meta">Model {{ preview.model_number }}</div>{% endif %}
+      </div>
+    </section>
+    <input type="hidden" name="pv_name" value="{{ preview.name or '' }}" />
+    <input type="hidden" name="pv_image" value="{{ preview.image_url or '' }}" />
+    <input type="hidden" name="pv_model" value="{{ preview.model_number or '' }}" />
+    <input type="hidden" name="pv_desc" value="{{ preview.description or '' }}" />
+    <input type="hidden" name="pv_price" value="{{ preview.price if preview.price is not none else '' }}" />
+    <input type="hidden" name="pv_currency" value="{{ preview.currency or '' }}" />
+    <input type="hidden" name="pv_instock" value="{{ '1' if preview.in_stock is true else '0' if preview.in_stock is false else '' }}" />
+    {% else %}
+    <div class="notice notice--warn">
+      Couldn't read details from that page automatically ({{ preview.error }}). You can still add it —
+      PriceOrbit will retry on the next check, or use “Check now” afterward.
+    </div>
+    {% endif %}
+  {% endif %}
+
+  <section class="field">
+    <label for="frequency">Check frequency</label>
+    <select id="frequency" name="frequency">
+      {% for value, label in frequency_choices %}<option value="{{ value }}" {{ 'selected' if form.frequency == value }}>{{ label }}</option>{% endfor %}
+    </select>
+    <div class="field__inline" id="row-custom" hidden>
+      <input type="number" name="custom_minutes" min="1" step="1" placeholder="Minutes" value="{{ form.custom_minutes or '' }}" />
+      <span class="field__hint">Minimum 1 minute. Checks use polite, jittered timing per store.</span>
+    </div>
+    <div class="field__inline" id="row-daily" hidden>
+      <input type="time" name="daily_time" value="{{ form.daily_time or '09:00' }}" />
+      <span class="field__hint">Checked once per day at this time.</span>
+    </div>
+    <p class="field__hint">One schedule applies to all of this product's stores.</p>
+  </section>
+
+  <section class="field">
+    <label>Monitor</label>
+    <div class="checkrow">
+      <label class="check"><input type="checkbox" name="monitor_price" value="1" {{ 'checked' if form.monitor_price }} /> Price tracking</label>
+      <label class="check"><input type="checkbox" name="monitor_stock" value="1" {{ 'checked' if form.monitor_stock }} /> In-stock monitoring</label>
+    </div>
+  </section>
+
+  <section class="field">
+    <label for="target_price">Target price <span class="field__opt">(optional)</span></label>
+    <input type="number" id="target_price" name="target_price" min="0" step="0.01" placeholder="e.g. 899.00" value="{{ form.target_price or '' }}" />
+    <p class="field__hint">Used for the “price below target” alert and a progress hint on the card.</p>
+  </section>
+
+  <section class="field">
+    <label for="condition">Alert when</label>
+    <select id="condition" name="condition">
+      {% for value, label in condition_choices %}<option value="{{ value }}" {{ 'selected' if form.condition == value }}>{{ label }}</option>{% endfor %}
+    </select>
+    <div class="field__inline" id="row-percent" hidden>
+      <input type="number" name="condition_percent" min="1" max="99" step="1" placeholder="Percent" value="{{ form.condition_percent or '' }}" />
+      <span class="field__hint">Alert when the price falls by at least this %.</span>
+    </div>
+  </section>
+
+  <section class="field">
+    <label>Send alerts to</label>
+    {% if accounts %}
+      <div class="accounts">
+        {% for a in accounts %}
+        <div class="account">
+          <label class="check"><input type="checkbox" name="account_ids" value="{{ a.id }}" {{ 'checked' if a.id|string in form.account_ids }} />
+            <span class="account__label">{{ a.label }}</span>
+            <span class="account__channel">{{ a.channel }}</span>
+          </label>
+          <button type="submit" class="btn btn--ghost btn--sm" formaction="/alerts/accounts/{{ a.id }}/test" formnovalidate>Send test</button>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="field__hint">Pick one or more. Alerts activate once at least one account is selected.</p>
+    {% else %}
+      <div class="notice">
+        No alert accounts configured yet. Set up an email or Telegram destination first, then it'll appear here.
+      </div>
+      <a class="btn" href="/alerts">Configure alert account</a>
+    {% endif %}
+  </section>
+
+  <section class="field">
+    <label for="tags">Tags <span class="field__opt">(optional)</span></label>
+    <input type="text" id="tags" name="tags" list="tag-list" placeholder="Comma-separated, e.g. GPU, wishlist" value="{{ form.tags or '' }}" />
+    <datalist id="tag-list">{% for t in tag_options %}<option value="{{ t }}"></option>{% endfor %}</datalist>
+  </section>
+
+  <div class="form-actions">
+    {% if preview is not none %}
+      <button type="submit" name="action" value="save" class="btn btn--primary">
+        {{ 'Confirm & track' if preview.ok else 'Add anyway as pending' }}
+      </button>
+      <button type="submit" name="action" value="preview" class="btn">Re-check URL</button>
+    {% else %}
+      <button type="submit" name="action" value="preview" class="btn btn--primary">Preview & continue</button>
+      <button type="submit" name="action" value="save" class="btn">Add without preview</button>
+    {% endif %}
+    <a class="btn btn--ghost" href="/price-tracking">Cancel</a>
+  </div>
+
+  <details class="bulk">
+    <summary>Add several at once</summary>
+    <div class="field">
+      <label for="bulk_urls">Bulk URLs</label>
+      <textarea id="bulk_urls" name="bulk_urls" rows="4" placeholder="One product URL per line">{{ form.bulk_urls or '' }}</textarea>
+      <p class="field__hint">These share the schedule, target, alert, and tag settings above. Each is added as pending and imported on its first check.</p>
+      <button type="submit" name="action" value="bulk" class="btn">Add all from list</button>
+    </div>
+  </details>
+</form>
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Settings · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left">
+    <h1 class="page-title">Settings</h1>
+    <p class="page-sub">General options, appearance, scraping, and backups. Database, security, sign-in, and logs are under <a href="/admin">Admin</a>.</p>
+  </div>
+</div>
+
+<!-- General -->
+<form class="form-card" method="post" action="/settings/general">
+  <h2 class="card-title">General</h2>
+  <div class="detail-grid">
+    <div class="field"><label>Timezone</label>
+      <select name="timezone">
+        {% set tzs = timezones if cfg.timezone in timezones else (timezones + [cfg.timezone]) %}
+        {% for tz in tzs %}<option value="{{ tz }}" {{ 'selected' if cfg.timezone == tz }}>{{ tz }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Default currency <span class="field__opt">(display preference)</span></label>
+      <select name="default_currency">
+        {% for code, label in currencies %}<option value="{{ code }}" {{ 'selected' if cfg.default_currency == code }}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Date format</label>
+      <select name="date_format">
+        {% for fmt, sample in date_formats %}<option value="{{ fmt }}" {{ 'selected' if cfg.date_format == fmt }}>{{ sample }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Time format</label>
+      <select name="time_format">
+        <option value="24" {{ 'selected' if cfg.time_format == '24' }}>24-hour (14:30)</option>
+        <option value="12" {{ 'selected' if cfg.time_format == '12' }}>12-hour (2:30 PM)</option>
+      </select>
+    </div>
+  </div>
+  <p class="field__hint">Currency is a display preference — PriceOrbit doesn’t convert between currencies, so each store keeps its own scraped price.</p>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save general</button></div>
+</form>
+
+<!-- Appearance -->
+<section class="form-card">
+  <h2 class="card-title">Appearance</h2>
+  <div class="presets">
+    <span class="field__hint">Presets:</span>
+    {% for p in theme_presets %}
+    <button type="button" class="preset" data-accent="{{ p.theme_accent }}" data-sidebar="{{ p.theme_sidebar_bg }}" data-topbar="{{ p.theme_topbar_accent }}" data-link="{{ p.theme_link }}">
+      <span class="preset__dot" style="background:{{ p.theme_accent }}"></span>{{ p.name }}
+    </button>
+    {% endfor %}
+  </div>
+  <form method="post" action="/settings/theme" id="theme-form" class="stack">
+    <div class="field"><label>Base theme</label>
+      <select name="theme_base" id="theme-base">
+        <option value="" {{ 'selected' if not cfg.theme_base }}>Auto (follow device)</option>
+        <option value="light" {{ 'selected' if cfg.theme_base == 'light' }}>Light</option>
+        <option value="dark" {{ 'selected' if cfg.theme_base == 'dark' }}>Dark</option>
+      </select>
+    </div>
+    <div class="color-grid">
+      <div class="color-row">
+        <label>Accent / primary</label>
+        <input type="text" class="hex" name="theme_accent" value="{{ cfg.theme_accent }}" placeholder="default" data-var="--accent" />
+        <input type="color" class="swatch" value="{{ cfg.theme_accent or '#4570d6' }}" />
+      </div>
+      <div class="color-row">
+        <label>Menu (sidebar) background</label>
+        <input type="text" class="hex" name="theme_sidebar_bg" value="{{ cfg.theme_sidebar_bg }}" placeholder="default" data-var="--sidebar-bg" />
+        <input type="color" class="swatch" value="{{ cfg.theme_sidebar_bg or '#ffffff' }}" />
+      </div>
+      <div class="color-row">
+        <label>Top border accent</label>
+        <input type="text" class="hex" name="theme_topbar_accent" value="{{ cfg.theme_topbar_accent }}" placeholder="default" data-var="--topbar-accent" />
+        <input type="color" class="swatch" value="{{ cfg.theme_topbar_accent or '#4570d6' }}" />
+      </div>
+      <div class="color-row">
+        <label>Link color</label>
+        <input type="text" class="hex" name="theme_link" value="{{ cfg.theme_link }}" placeholder="default" data-var="--link" />
+        <input type="color" class="swatch" value="{{ cfg.theme_link or '#4570d6' }}" />
+      </div>
+    </div>
+    <p class="field__hint">Changes preview live. Leave a field blank to use the built-in default. Colors apply in both light and dark.</p>
+    <div class="form-actions">
+      <button class="btn btn--primary" type="submit">Save appearance</button>
+      <button type="button" class="btn" id="theme-export">Export theme</button>
+      <button type="button" class="btn" id="theme-import-btn">Import theme</button>
+    </div>
+    <textarea id="theme-import" class="theme-import" rows="2" placeholder='Paste theme JSON, then click "Import theme"' hidden></textarea>
+  </form>
+  <form method="post" action="/settings/theme/reset"><button class="btn btn--sm btn--ghost is-danger" type="submit">Reset to default theme</button></form>
+</section>
+
+<!-- Scraping API (scrape.do) — only when a token is configured -->
+{% if scrapedo %}
+<section class="form-card">
+  <h2 class="card-title">Scraping API (scrape.do)</h2>
+  <div class="status-grid">
+    <div class="stat"><span class="stat__k">Credits used</span><span class="stat__v">{{ '{:,}'.format(scrapedo.used) if scrapedo.used is not none else '—' }}{% if scrapedo.limit %} / {{ '{:,}'.format(scrapedo.limit) }}{% endif %}</span></div>
+    <div class="stat"><span class="stat__k">Credits left</span><span class="stat__v {{ 'stat__v--bad' if scrapedo.remaining is not none and scrapedo.remaining < 50 else '' }}">{{ '{:,}'.format(scrapedo.remaining) if scrapedo.remaining is not none else '—' }}</span></div>
+    {% if scrapedo.requests is not none %}<div class="stat"><span class="stat__k">Requests this month</span><span class="stat__v">{{ '{:,}'.format(scrapedo.requests) }}</span></div>{% endif %}
+    <div class="stat"><span class="stat__k">Concurrency</span><span class="stat__v">{% if scrapedo.concurrent %}{{ scrapedo.remaining_concurrent if scrapedo.remaining_concurrent is not none else '—' }} / {{ scrapedo.concurrent }}{% else %}—{% endif %}</span></div>
+  </div>
+  {% if scrapedo.used_pct is not none %}
+  <div class="meter" title="{{ scrapedo.used_pct }}% used"><div class="meter__fill {{ 'meter__fill--bad' if scrapedo.used_pct >= 90 else '' }}" style="width: {{ scrapedo.used_pct if scrapedo.used_pct <= 100 else 100 }}%"></div></div>
+  {% endif %}
+  <p class="field__hint">
+    {% if scrapedo.source == 'local' %}<strong>Estimate only.</strong> Usage is counted locally (free-tier credits aren't exposed by scrape.do's API) and may not match exactly — check your <a href="https://dashboard.scrape.do" target="_blank" rel="noopener">scrape.do dashboard</a> for actual usage.{% else %}Live figures from scrape.do.{% endif %}
+    Used only when the built-in free engines are blocked (anti-bot stores like Home Depot); residential + render fetches cost ~25 credits each. Renews monthly.
+  </p>
+</section>
+{% endif %}
+
+<!-- Backup -->
+<section class="form-card">
+  <h2 class="card-title">Backup &amp; restore</h2>
+  <div class="backup-row">
+    <a class="btn" href="/settings/export.json">Export settings (JSON)</a>
+    <a class="btn" href="/settings/backup/products.json">Export products + history (JSON)</a>
+  </div>
+  <p class="field__hint">Settings export excludes secrets (SMTP password, API key, bot token) — re-enter those after restoring.</p>
+  <form method="post" action="/settings/import" class="stack">
+    <div class="field"><label>Restore settings</label>
+      <textarea name="payload" rows="3" placeholder="Paste a settings JSON export here"></textarea>
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Import settings</button></div>
+  </form>
+</section>
+
+{% endblock %}

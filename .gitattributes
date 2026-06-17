@@ -1,0 +1,4 @@
+# Shell scripts must use LF; CRLF breaks the `#!/usr/bin/env bash` shebang
+# inside Linux containers (env: 'bash\r': No such file or directory).
+*.sh text eol=lf
+docker/entrypoint.sh text eol=lf

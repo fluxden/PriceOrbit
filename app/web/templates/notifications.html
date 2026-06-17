@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Notifications · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left">
+    <h1 class="page-title">Notifications</h1>
+    <p class="page-sub">{{ total }} notification{{ 's' if total != 1 }}{% if channel or outcome or product %} matching filters{% endif %}.</p>
+  </div>
+</div>
+
+<form class="toolbar" method="get" action="/notifications">
+  <select name="channel" aria-label="Channel" onchange="this.form.submit()">
+    <option value="">All channels</option>
+    {% for c in ['email', 'telegram', 'sound'] %}<option value="{{ c }}" {{ 'selected' if channel == c }}>{{ c|capitalize }}</option>{% endfor %}
+  </select>
+  <select name="outcome" aria-label="Outcome" onchange="this.form.submit()">
+    <option value="">All outcomes</option>
+    <option value="sent" {{ 'selected' if outcome == 'sent' }}>Sent</option>
+    <option value="failed" {{ 'selected' if outcome == 'failed' }}>Failed</option>
+    <option value="suppressed" {{ 'selected' if outcome == 'suppressed' }}>Muted</option>
+  </select>
+  <select name="product" aria-label="Product" onchange="this.form.submit()">
+    <option value="">All products</option>
+    {% for p in product_options %}<option value="{{ p.id }}" {{ 'selected' if product == p.id|string }}>{{ p.name }}</option>{% endfor %}
+  </select>
+  {% if channel or outcome or product %}<a class="btn btn--ghost" href="/notifications">Clear filters</a>{% endif %}
+</form>
+
+{% if entries %}
+<section class="form-card notif-card">
+  <div class="notif-log">
+    {% for e in entries %}
+    <div class="notifrow">
+      <span class="notifrow__outcome notifrow__outcome--{{ e.outcome }}">{{ {'sent': 'Sent', 'failed': 'Failed', 'suppressed': 'Muted'}[e.outcome] }}</span>
+      <span class="notifrow__when">{{ e.created_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="notifrow__ch">{{ e.channel or '—' }}</span>
+      <a class="notifrow__product" href="/products/{{ e.product_id }}">{{ e.product }}</a>
+      <span class="notifrow__msg">{{ e.subject or e.message or '' }}{% if e.outcome != 'sent' and e.error %}<span class="notifrow__err"> — {{ e.error }}</span>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page > 1 %}<a class="page-link" href="/notifications?{{ qs_base }}{{ '&' if qs_base }}page={{ page - 1 }}">← Prev</a>{% endif %}
+  <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a class="page-link" href="/notifications?{{ qs_base }}{{ '&' if qs_base }}page={{ page + 1 }}">Next →</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<div class="empty">
+  <p>No notifications {% if channel or outcome or product %}match these filters{% else %}have been sent yet{% endif %}.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · {{ app_name }}</title>
+  <link rel="icon" href="/static/img/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  {% if theme_style %}<style>:root{ {{ theme_style }} } html[data-theme="dark"]{ {{ theme_style }} }</style>{% endif %}
+  <script>
+    (function () {
+      try {
+        var cfg = "{{ theme_base }}";
+        var t = localStorage.getItem('priceorbit-theme');
+        if (!t) { t = (cfg === 'light' || cfg === 'dark') ? cfg : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body class="login-body"{% if login_bg %} style="--login-bg: {{ login_bg }}"{% endif %}>
+  <main class="login">
+    <div class="login-card">
+      <div class="login-brand">
+        {% if login_logo %}<img class="login-logo" src="{{ login_logo }}" alt="" />
+        {% else %}<img class="login-logo" src="/static/img/priceorbit-login.png" alt="{{ app_name }}" />{% endif %}
+      </div>
+      {% if login_heading %}<h1 class="login-title">{{ login_heading }}</h1>{% endif %}
+      <p class="login-sub">{{ login_subtext }}</p>
+
+      {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+
+      {% if allow_local_login %}
+      <form method="post" action="/login" class="login-form" autocomplete="on">
+        <input type="hidden" name="next" value="{{ next }}" />
+        <label class="field"><span>Username</span>
+          <input type="text" name="username" autocomplete="username" autofocus required />
+        </label>
+        <label class="field"><span>Password</span>
+          <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <button class="btn btn--primary login-submit" type="submit">Sign in</button>
+      </form>
+      {% endif %}
+
+      {% if oidc_enabled %}
+      {% if allow_local_login %}<div class="login-or"><span>or</span></div>{% endif %}
+      <a class="btn {{ 'btn--primary' if not allow_local_login }} login-submit login-sso" href="/login/oidc{% if next and next != '/' %}?next={{ next|urlencode }}{% endif %}">Sign in with {{ oidc_provider_name }}</a>
+      {% endif %}
+
+      {% if not allow_local_login and not oidc_enabled %}
+      <p class="field__hint">Sign-in isn't configured. Contact your administrator.</p>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

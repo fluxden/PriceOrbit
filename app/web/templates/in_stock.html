@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import product_card %}
+{% block title %}In-Stock Monitor · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left">
+    <h1 class="page-title">In-Stock Monitor</h1>
+    <div class="tabs" role="tablist" aria-label="View">
+      <a class="tab {{ 'is-active' if tab == 'overview' else '' }}" role="tab"
+         href="/in-stock?tab=overview&sort={{ sort }}">All <span class="tab__count">{{ total if tab == 'overview' else '' }}</span></a>
+      <a class="tab {{ 'is-active' if tab == 'favorites' else '' }}" role="tab"
+         href="/in-stock?tab=favorites&sort={{ sort }}">Favorites <span class="tab__count">{{ favorites_count }}</span></a>
+    </div>
+  </div>
+  <div class="page-head__right">
+    <form method="post" action="/products/check-all" style="display:inline"><button class="btn" type="submit" title="Check every monitored product now">⟳ Check all</button></form>
+    <a class="btn btn--primary" href="/price-tracking/add?monitor=stock">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      Add Product
+    </a>
+    <div class="viewswitch" role="group" aria-label="Layout">
+      <button class="viewbtn" data-view="list" aria-label="List view" title="List"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+      <button class="viewbtn" data-view="grid" aria-label="Grid view" title="Grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+      <button class="viewbtn" data-view="compact" aria-label="Compact view" title="Compact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<form class="toolbar" method="get" action="/in-stock">
+  <input type="hidden" name="tab" value="{{ tab }}" />
+  <div class="toolbar__search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search monitored products" aria-label="Search products" />
+  </div>
+  <select name="sort" aria-label="Sort by" onchange="this.form.submit()">
+    {% for value, label in sort_options.items() %}<option value="{{ value }}" {{ 'selected' if sort == value }}>{{ label }}</option>{% endfor %}
+  </select>
+  {% if store_options %}<select name="store" aria-label="Filter by store" onchange="this.form.submit()"><option value="">All stores</option>{% for s in store_options %}<option value="{{ s }}" {{ 'selected' if store == s }}>{{ s }}</option>{% endfor %}</select>{% endif %}
+  {% if tag_options %}<select name="tag" aria-label="Filter by tag" onchange="this.form.submit()"><option value="">All tags</option>{% for t in tag_options %}<option value="{{ t }}" {{ 'selected' if tag == t }}>{{ t }}</option>{% endfor %}</select>{% endif %}
+  <label class="toolbar__check"><input type="checkbox" name="instock" value="1" {{ 'checked' if instock }} onchange="this.form.submit()" /> In stock only</label>
+</form>
+
+{% if rows %}
+<div class="products view-list">
+  {% for row in rows %}{{ product_card(row, stock_border=true) }}{% endfor %}
+</div>
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page > 1 %}<a class="page-link" href="?{{ qs_base }}&page={{ page - 1 }}">← Prev</a>{% endif %}
+  <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a class="page-link" href="?{{ qs_base }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<div class="empty">
+  <div class="empty__mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg></div>
+  {% if tab == 'favorites' %}
+  <h2 class="empty__title">No favorites yet</h2><p class="empty__text">Star a monitored product to pin it here.</p>
+  {% elif q or store or tag or instock %}
+  <h2 class="empty__title">Nothing matches those filters</h2><p class="empty__text">Try clearing the search or filters above.</p><a class="btn" href="/in-stock?tab={{ tab }}">Clear filters</a>
+  {% else %}
+  <h2 class="empty__title">No products monitored yet</h2><p class="empty__text">Add a product link and PriceOrbit will watch its availability and alert you the moment it’s back in stock.</p><a class="btn btn--primary" href="/price-tracking/add?monitor=stock">Add your first product</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

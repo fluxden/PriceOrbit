@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.product.name }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="detail-page">
+
+<div class="page-head">
+  <div class="page-head__left">
+    <a class="back-link" href="/price-tracking">← Price Tracking</a>
+  </div>
+  <div class="page-head__right">
+    <form method="post" action="/products/{{ detail.product.id }}/check-now"><button class="btn" type="submit">Check now</button></form>
+    <a class="btn" href="/products/{{ detail.product.id }}/history.csv">Export CSV</a>
+    <form method="post" action="/products/{{ detail.product.id }}/favorite">
+      <button class="btn btn--ghost" type="submit" title="Favorite">{{ '★ Favorited' if detail.product.is_favorite else '☆ Favorite' }}</button>
+    </form>
+  </div>
+</div>
+
+{% if detail.mixed_currency %}
+<div class="notice notice--warn">This product has listings in more than one currency. The chart and stats use {{ detail.currency or 'the primary store' }}; other-currency stores are shown in the Tracked Stores list but excluded from the stats.</div>
+{% endif %}
+
+<!-- Static product banner (read-only; Edit reveals the form) -->
+<section class="form-card product-banner">
+  <div class="pb__main">
+    {% if detail.product.image_url %}<img class="pb__thumb" src="{{ detail.product.image_url }}" alt="" />{% endif %}
+    <div class="pb__id">
+      <h1 class="pb__name">{{ detail.product.name }}</h1>
+      <div class="pb__meta">
+        {% if detail.product.model_number %}<span class="pb__model">Model&nbsp;<strong>{{ detail.product.model_number }}</strong></span>{% endif %}
+        {% for t in (tags_text or '').split(',') if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endfor %}
+      </div>
+      <div class="pb__badges">
+        {% if detail.in_stock %}<span class="stock-badge stock-badge--in">In stock</span>
+        {% else %}<span class="stock-badge stock-badge--out">Out of stock</span>{% endif %}
+        {% if detail.stats.current %}<span class="best-badge">Best price <strong>{{ detail.stats.current }}</strong>{% if detail.best_store %} at {{ detail.best_store }}{% endif %}</span>{% endif %}
+        {% if detail.product.target_price %}<span class="target-badge">Target {{ detail.product.target_price }}</span>{% endif %}
+        {% if detail.deal %}
+          {% if detail.deal.is_low %}<span class="deal deal--good">At its tracked low</span>
+          {% elif detail.deal.near_low %}<span class="deal deal--good">Near its tracked low</span>
+          {% else %}<span class="deal {{ 'deal--bad' if detail.deal.pct_above_low >= 25 else 'deal--mid' }}">{{ detail.deal.pct_above_low }}% above low</span>{% endif %}
+        {% endif %}
+      </div>
+      <div class="pb__health pb__health--{{ detail.health.status }}">
+        <span class="pb__health-dot" aria-hidden="true"></span>
+        {% if detail.health.status == 'failing' %}Checks failing — {{ detail.health.consecutive_failures }} in a row{% if detail.health.last_error %} · {{ detail.health.last_error }}{% endif %}
+        {% elif detail.health.status == 'stale' %}No successful check recently{% if detail.health.last_checked %} · last {{ detail.health.last_checked.strftime('%b %d, %H:%M') }}{% endif %}
+        {% elif detail.health.status == 'new' %}Awaiting first check
+        {% elif detail.health.status == 'paused' %}Monitoring paused
+        {% elif detail.health.status == 'off' %}Monitoring off
+        {% else %}Monitoring healthy{% if detail.health.last_checked %} · last checked {{ detail.health.last_checked.strftime('%b %d, %H:%M') }}{% endif %}{% endif %}
+        {% if detail.health.next_run and detail.health.status not in ['paused', 'off'] %}<span class="pb__health-next">· next ~{{ detail.health.next_run.strftime('%b %d, %H:%M') }}</span>{% endif %}
+      </div>
+      {% if detail.product.description %}<p class="pb__desc">{{ detail.product.description }}</p>{% endif %}
+    </div>
+  </div>
+
+  <details class="detail-edit">
+    <summary class="btn btn--ghost detail-edit__btn">✎ Edit product info</summary>
+    <form class="detail-edit__form" method="post" action="/products/{{ detail.product.id }}/details">
+      <div class="field">
+        <label for="name">Product name</label>
+        <input type="text" id="name" name="name" value="{{ detail.product.name }}" />
+      </div>
+      <div class="detail-grid">
+        <div class="field">
+          <label for="model_number">Model number</label>
+          <input type="text" id="model_number" name="model_number" value="{{ detail.product.model_number or '' }}" placeholder="Model number" />
+        </div>
+        <div class="field">
+          <label for="target_price">Target price <span class="field__opt">(optional)</span></label>
+          <input type="number" id="target_price" name="target_price" min="0" step="0.01" value="{{ detail.product.target_price or '' }}" />
+        </div>
+        <div class="field">
+          <label for="tags">Tags</label>
+          <input type="text" id="tags" name="tags" value="{{ tags_text }}" placeholder="Comma-separated" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="3" placeholder="Imported from the primary store; edit freely.">{{ detail.product.description or '' }}</textarea>
+      </div>
+      <div class="form-actions"><button class="btn btn--primary" type="submit">Save details</button></div>
+    </form>
+  </details>
+</section>
+
+<!-- Price history chart (full width) -->
+<section class="form-card chart-card">
+  <div class="chart-head">
+    <h2 class="card-title">Price history</h2>
+    <div class="chart-ranges" role="group" aria-label="Time range">
+      <button type="button" class="rangebtn" data-range="7">7d</button>
+      <button type="button" class="rangebtn" data-range="30">30d</button>
+      <button type="button" class="rangebtn" data-range="90">90d</button>
+      <button type="button" class="rangebtn is-active" data-range="0">All</button>
+    </div>
+  </div>
+  <div class="chart-legend">
+    {% for s in detail.series %}
+    <button type="button" class="legend" data-series="{{ s.id }}"><span class="legend__dot" style="background:{{ s.color }}"></span>{{ s.store }}</button>
+    {% endfor %}
+  </div>
+  <div id="price-chart" class="chart-host"></div>
+  <script type="application/json" id="chart-data">{{ {"series": detail.series, "oosSpans": detail.oos_spans, "target": detail.target_value, "currency": detail.currency} | tojson }}</script>
+  <div class="stats-strip">
+    <div class="stat"><span class="stat__k">Current</span><span class="stat__v">{{ detail.stats.current or '—' }}</span></div>
+    <div class="stat"><span class="stat__k">Lowest</span><span class="stat__v stat__v--good">{{ detail.stats.low or '—' }}</span></div>
+    <div class="stat"><span class="stat__k">Highest</span><span class="stat__v">{{ detail.stats.high or '—' }}</span></div>
+    <div class="stat"><span class="stat__k">Average</span><span class="stat__v">{{ detail.stats.avg or '—' }}</span></div>
+    <div class="stat"><span class="stat__k">Data points</span><span class="stat__v">{{ detail.stats.points or 0 }}</span></div>
+  </div>
+</section>
+
+<div class="detail-cols">
+<!-- Tracked stores -->
+<section class="form-card stores-card">
+  <h2 class="card-title">Tracked Stores</h2>
+  <div class="stores">
+    {% for s in detail.stores %}
+    <div class="store {{ 'is-paused' if not s.active }}">
+      <span class="store__icon">
+        {% if s.favicon_url %}<img src="{{ s.favicon_url }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"/>{% endif %}
+        <span class="store__chip" {% if s.favicon_url %}style="display:none"{% endif %}>{{ (s.store or '?')[0]|upper }}</span>
+      </span>
+      <div class="store__main">
+        <div class="store__name">{{ s.store }}{% if s.is_primary %}<span class="store__primary">primary</span>{% endif %}</div>
+        <div class="store__sub">
+          <span class="store__price">{{ s.last_price_display }}</span>
+          <span class="stock-dot {{ 'is-in' if s.last_in_stock else 'is-out' }}"></span>
+          <span class="store__sched">⟳ {{ s.schedule_label }}</span>
+          {% if s.last_checked_at %}<span class="store__checked">· checked {{ s.last_checked_at.strftime('%b %d') }}</span>{% endif %}
+          {% if s.consecutive_failures %}<span class="store__failing" title="{{ s.last_error or 'Recent checks failed' }}">⚠ {{ s.consecutive_failures }} failed</span>{% endif %}
+          {% if not s.active %}<span class="store__paused">paused</span>{% endif %}
+        </div>
+      </div>
+      <div class="store__actions">
+        <a class="btn btn--sm btn--ghost" href="{{ s.url }}" target="_blank" rel="noopener">Open</a>
+        <form method="post" action="/products/{{ detail.product.id }}/stores/{{ s.id }}/check-now"><button class="btn btn--sm" type="submit">Check</button></form>
+        <form method="post" action="/products/{{ detail.product.id }}/stores/{{ s.id }}/pause"><button class="btn btn--sm btn--ghost" type="submit">{{ 'Resume' if not s.active else 'Pause' }}</button></form>
+      </div>
+      <details class="store__edit">
+        <summary>Edit</summary>
+        {% set tok = 'inherit' if not s.schedule_override else ('daily' if s.schedule_kind == 'daily' else (s.check_interval_minutes|string if s.check_interval_minutes in [1,5,15,60,360,720,1440] else 'custom')) %}
+        <form method="post" action="/products/{{ detail.product.id }}/stores/{{ s.id }}/edit" class="store__editform">
+          <div class="field"><label>Store URL</label><input type="url" name="url" value="{{ s.url }}" /></div>
+          <div class="field"><label>Check schedule</label>
+            <select name="frequency">
+              <option value="inherit" {{ 'selected' if tok == 'inherit' }}>Use product default</option>
+              {% for value, label in frequency_choices %}<option value="{{ value }}" {{ 'selected' if tok == value }}>{{ label }}</option>{% endfor %}
+            </select>
+            <div class="field__inline"><input type="number" name="custom_minutes" min="1" placeholder="Custom minutes" value="{{ s.check_interval_minutes if tok == 'custom' else '' }}" />
+              <input type="time" name="daily_time" value="{{ s.daily_check_time or '09:00' }}" /><span class="field__hint">custom / daily values</span></div>
+          </div>
+          <label class="check"><input type="checkbox" name="make_primary" value="1" {{ 'checked' if s.is_primary }} {{ 'disabled' if s.is_primary }} /> Primary store (defines product identity)</label>
+          <div class="form-actions">
+            <button class="btn btn--primary btn--sm" type="submit">Save store</button>
+          </div>
+        </form>
+        <div class="store__edit-row">
+          <form method="post" action="/products/{{ detail.product.id }}/stores/{{ s.id }}/correct-price" class="field__inline">
+            <input type="number" name="price" min="0" step="0.01" placeholder="Correct price" />
+            <button class="btn btn--sm" type="submit">Fix latest price</button>
+          </form>
+          <form method="post" action="/products/{{ detail.product.id }}/stores/{{ s.id }}/remove" data-confirm="Remove this store and its price history?">
+            <button class="btn btn--sm is-danger" type="submit">Remove store</button>
+          </form>
+        </div>
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+  <form class="store-add field__inline" method="post" action="/products/{{ detail.product.id }}/stores/add">
+    <input type="url" name="url" placeholder="Add another store URL for this product" />
+    <button class="btn" type="submit">Add store</button>
+  </form>
+</section>
+
+<!-- Product schedule + monitors -->
+{% set ptok = 'daily' if detail.product.schedule_kind == 'daily' else (detail.product.check_interval_minutes|string if detail.product.check_interval_minutes in [1,5,15,60,360,720,1440] else 'custom') %}
+<form class="form-card" method="post" action="/products/{{ detail.product.id }}/schedule">
+  <h2 class="card-title">Default check schedule</h2>
+  <div class="field">
+    <label for="frequency">Check frequency <span class="field__opt">(applies to stores using the default)</span></label>
+    <select id="frequency" name="frequency">
+      {% for value, label in frequency_choices %}<option value="{{ value }}" {{ 'selected' if ptok == value }}>{{ label }}</option>{% endfor %}
+    </select>
+    <div class="field__inline" id="row-custom" hidden>
+      <input type="number" name="custom_minutes" min="1" placeholder="Minutes" value="{{ detail.product.check_interval_minutes if ptok == 'custom' else '' }}" />
+    </div>
+    <div class="field__inline" id="row-daily" hidden>
+      <input type="time" name="daily_time" value="{{ detail.product.daily_check_time or '09:00' }}" />
+    </div>
+  </div>
+  <div class="field"><label>Monitor</label>
+    <div class="checkrow">
+      <label class="check"><input type="checkbox" name="monitor_price" value="1" {{ 'checked' if detail.product.track_price }} /> Price tracking</label>
+      <label class="check"><input type="checkbox" name="monitor_stock" value="1" {{ 'checked' if detail.product.track_stock }} /> In-stock monitoring</label>
+    </div>
+  </div>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save schedule</button></div>
+</form>
+
+<!-- Alerts -->
+<section class="form-card">
+  <h2 class="card-title">Alerts</h2>
+  {% if detail.rules %}
+  <div class="rules">
+    {% for r in detail.rules %}
+    <div class="rule {{ 'is-off' if not r.enabled }}">
+      <div class="rule__main">
+        <span class="rule__type">{{ r.type_label }}</span>
+        {% if r.threshold_display and r.threshold_display != '—' %}<span class="rule__thresh">{{ r.threshold_display }}</span>{% endif %}
+        <span class="rule__acct">→ {{ r.account_label }} <span class="account__channel">{{ r.channel }}</span></span>
+      </div>
+      <div class="rule__actions">
+        <form method="post" action="/products/{{ detail.product.id }}/alerts/{{ r.id }}/toggle"><button class="btn btn--sm btn--ghost" type="submit">{{ 'Enabled' if r.enabled else 'Disabled' }}</button></form>
+        <form method="post" action="/products/{{ detail.product.id }}/alerts/{{ r.id }}/delete" data-confirm="Delete this alert?"><button class="btn btn--sm is-danger" type="submit">Delete</button></form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="field__hint">No alerts yet. Add one below.</p>
+  {% endif %}
+
+  <form method="post" action="/products/{{ detail.product.id }}/alerts/add" class="rule-add">
+    <div class="field">
+      <label for="rule-trigger">Alert when</label>
+      <select id="rule-trigger" name="trigger">
+        {% for value, label, kind in trigger_choices %}<option value="{{ value }}" data-thresh="{{ kind }}">{{ label }}</option>{% endfor %}
+      </select>
+      <div class="field__inline" id="rule-thresh-wrap" hidden>
+        <input type="number" id="rule-threshold" name="threshold" min="0" step="0.01" placeholder="Threshold" />
+      </div>
+    </div>
+    <div class="field">
+      <label>Send to</label>
+      <div class="checkrow">
+        <label class="check"><input type="checkbox" name="sound" value="1" /> Browser sound <span class="account__channel">in-app</span></label>
+        {% for a in detail.accounts %}
+        <label class="check"><input type="checkbox" name="account_ids" value="{{ a.id }}" /> {{ a.label }} <span class="account__channel">{{ a.channel }}</span></label>
+        {% endfor %}
+      </div>
+      {% if not detail.accounts %}<p class="field__hint">Browser sound works without setup. For email or Telegram, <a href="/alerts">configure an alert account</a>.</p>{% endif %}
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Add alert</button></div>
+  </form>
+</section>
+
+<!-- Alert history -->
+{% if detail.history %}
+<section class="form-card">
+  <h2 class="card-title">Recent alerts</h2>
+  <div class="alert-log">
+    {% for h in detail.history %}
+    <div class="logrow">
+      <span class="logrow__icon {{ 'is-ok' if h.success else 'is-bad' }}">{{ '✓' if h.success else '✕' }}</span>
+      <span class="logrow__when">{{ h.created_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="logrow__ch">{{ h.channel or '' }}</span>
+      <span class="logrow__msg">{{ h.subject or h.error or '' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+</div><!-- /detail-cols -->
+
+</div><!-- /detail-page -->
+<script src="/static/js/chart.js" defer></script>
+{% endblock %}
