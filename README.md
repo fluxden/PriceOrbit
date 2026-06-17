@@ -20,11 +20,62 @@ and API and runs the background scheduler), and a **MariaDB database**.
 - Notifications by email, Telegram, or browser sound, plus a filterable
   notification log.
 - Optional multi-user mode with local accounts and OIDC single sign-on.
-- Admin area (admin-only): database status, security &amp; sign-in, login-page
-  customization, SSO config, and a logs/debug page with a configurable level
-  (fatal · error · warn · info · debug · trace).
+- Admin area (admin-only): user management, database status, security &amp;
+  sign-in, login-page customization, SSO config, and a logs/debug page with a
+  configurable level (fatal · error · warn · info · debug · trace).
+- Optional [scrape.do](https://scrape.do) fallback for anti-bot stores (Home
+  Depot, etc.), enabled on the Settings page with a live credit-usage meter.
 - Monitoring health: per-product status, a "check all now" action, and
   home-page summary tiles.
+
+## Scraping anti-bot-protected stores (scrape.do)
+
+Most stores work out of the box. Product pages are fetched with a
+browser-impersonating client (`curl_cffi`, real TLS/HTTP2 fingerprint) and a
+plain `httpx` fallback, which together read most static and server-rendered
+stores. A few large retailers (notably **Home Depot**) sit behind enterprise
+anti-bot (Akamai) that blocks *every* server-side request — even a real
+self-hosted headless browser. To read those, PriceOrbit can fall back to
+[scrape.do](https://scrape.do), a scraping API that routes the request through
+residential proxies plus a headless browser.
+
+This is **optional and disabled by default**. With it off, Akamai-protected
+stores simply fail with a clear message; everything else is unaffected.
+
+**Enable it on the Settings page** (recommended): create a free scrape.do
+account, then go to **Settings → Scraping API (scrape.do)**, paste your API
+token, tick **Enable scrape.do**, and save. The same panel shows a live
+**token / credit usage meter** so you can watch your monthly balance. You can
+also seed the token at deploy time with the `SCRAPEDO_TOKEN` env var (see
+[`ENVIRONMENT.md`](./ENVIRONMENT.md)); values set on the Settings page override
+the env defaults.
+
+scrape.do is tried **only as a last resort** — after the free built-in engines
+are blocked — so credits are spent solely on the hard stores. Normal stores
+never touch it.
+
+> ⚠️ **Free accounts get only 1,000 credits per month.** A protected fetch
+> (residential proxies + JS rendering — the default needed to beat Akamai) costs
+> **~25 credits**, so the free tier is roughly **40 protected-store fetches per
+> month**. Credits renew monthly and only *successful* fetches are charged.
+>
+> **Keep checks on protected products infrequent.** Tracking an Akamai-protected
+> store every hour would burn the entire monthly allowance in well under two
+> days. Set those products to check about **once a day** (or less) — otherwise
+> the credits exhaust quickly and the stores fail until the next monthly reset.
+> Normal (free-engine) stores are unaffected and can be checked as often as you
+> like.
+
+**Other notes:**
+
+- scrape.do is **slower** (residential + render = several seconds up to ~a
+  minute per fetch) and **not guaranteed** for every site or forever — anti-bot
+  is an arms race.
+- To stretch credits you can turn off residential proxies (clear the
+  **Residential / mobile proxies** checkbox, or set `SCRAPEDO_SUPER: "false"` →
+  ~5 credits/fetch), but that won't get past Akamai.
+- Need more headroom? scrape.do has [paid plans](https://scrape.do/pricing/)
+  from ~$29/mo.
 
 ## Deploy with Docker Compose
 
@@ -141,57 +192,6 @@ service to point at your server, then remove the bundled `db` service (and its
 `depends_on` entry). MySQL 8 and MariaDB 11 are both supported with the default
 `DB_DRIVER=mysql+pymysql`.
 
-## Scraping anti-bot-protected stores (optional)
-
-Most stores work out of the box. Product pages are fetched with a
-browser-impersonating client (`curl_cffi`, real TLS/HTTP2 fingerprint) and a
-plain `httpx` fallback, which together read most static and server-rendered
-stores. A few large retailers (notably **Home Depot**) sit behind enterprise
-anti-bot (Akamai) that blocks *every* server-side request — even a real
-self-hosted headless browser. To read those, PriceOrbit can fall back to
-[scrape.do](https://scrape.do), a scraping API that routes the request through
-residential proxies plus a headless browser.
-
-This is **optional and disabled by default**. With no token set, nothing
-changes (and Akamai-protected stores simply fail with a clear message).
-
-**Setup — you must create a free scrape.do account:**
-
-1. Sign up at **<https://scrape.do>** — free, no credit card required.
-2. Copy your API **token** from the dashboard.
-3. Add it to the `app` service in `docker-compose.yml` (uncomment the line):
-   ```yaml
-       SCRAPEDO_TOKEN: your-token-here
-   ```
-   then `docker compose up -d`.
-
-scrape.do is tried **only as a last resort** — after the free built-in engines
-are blocked — so credits are spent solely on the hard stores. Normal stores
-never touch it.
-
-**Free-tier limitations (important):**
-
-- **1,000 credits per month**, renewing monthly; 5 concurrent requests. Only
-  *successful* requests are charged.
-- Anti-bot stores require residential proxies **and** JS rendering, which
-  PriceOrbit enables by default (`SCRAPEDO_SUPER` + `SCRAPEDO_RENDER`). That
-  combination costs **25 credits per request** (residential 10× × rendering
-  5× ... = 25×) → roughly **40 protected-store fetches per month** on the free
-  plan.
-- Practical meaning: free is fine for **a handful of Akamai-protected products
-  checked about once a day**. Many protected products, or frequent checks, will
-  exhaust the credits — after which those stores fail until the monthly reset (or
-  you move to a [paid plan](https://scrape.do/pricing/), from ~$29/mo).
-- scrape.do is **slower** (residential + render = several seconds up to ~a minute
-  per fetch) and **not guaranteed** for every site or forever — anti-bot is an
-  arms race.
-- To stretch credits, you can disable residential (`SCRAPEDO_SUPER: "false"`,
-  drops to 5 credits/request) — but that won't get past Akamai. See
-  [`ENVIRONMENT.md`](./ENVIRONMENT.md) for all `SCRAPEDO_*` options.
-
-Set a sensible check interval for protected products (e.g. daily) so you don't
-burn through the monthly free credits.
-
 ## Notes
 
 - Email and Telegram credentials are normally configured in the **Alerts** page
@@ -203,6 +203,9 @@ burn through the monthly free credits.
   redeploy — it overrides the stored settings so you can always get back in:
   `OFF` (no sign-in), `Standard` (local password only, OIDC off), or `OIDC`.
   While set, the Admin sign-in/OIDC controls are disabled with a notice; unset it
-  to manage from the UI again. See [`ENVIRONMENT.md`](./ENVIRONMENT.md).
+  to manage from the UI again. **Security:** `OFF` only disables sign-in until an
+  admin account exists — once one does, `OFF` is upgraded to `Standard` so auth
+  can't be bypassed via the env var (it still disables a broken OIDC, which is
+  the actual recovery). See [`ENVIRONMENT.md`](./ENVIRONMENT.md).
 - Log verbosity is set with `LOG_LEVEL` (`fatal`→`trace`) or live in **Admin →
   Logs**; both web and worker write to `LOG_FILE` (default `/data/app.log`).

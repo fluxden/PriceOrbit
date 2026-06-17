@@ -33,8 +33,10 @@ services:
       DB_NAME: priceorbit
       DB_USER: priceorbit
       DB_PASSWORD: CHANGE_ME
-      # Optional: enable the scrape.do fallback for anti-bot stores (Home Depot,
-      # etc.). Leave unset to disable. Free tier: https://scrape.do
+      # Optional: scrape.do fallback for anti-bot stores (Home Depot, etc.).
+      # Easiest to enable on the Settings page instead; this just seeds the token
+      # at deploy time. Free tier = 1,000 credits/month (~25 per protected fetch),
+      # so keep protected products on an infrequent schedule. https://scrape.do
       # SCRAPEDO_TOKEN: CHANGE_ME
       # Optional: initial log level (fatal|error|warn|info|debug|trace).
       # Also editable at runtime in Admin → Logs.

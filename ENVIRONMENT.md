@@ -18,7 +18,7 @@ optional.
 | `TIMEZONE` | Time zone used for schedules and for displaying timestamps. | `UTC` | Any IANA time-zone name, e.g. `UTC`, `America/New_York`, `Europe/London`, `Asia/Tokyo`. | |
 | `UPLOADS_DIR` | Directory inside the container where uploaded login-page assets (logo, background) are stored. Keep it on a mounted volume to persist. | `/data/uploads` | An absolute path inside the container. | |
 | `APP_VERSION` | Informational version string shown on the Settings page. Not normally set by hand. | `0.5.0` | Any string. | |
-| `LOGIN_TYPE` | **Sign-in override / lockout recovery.** When set, forces the login mode regardless of the Admin-UI setting, so a misconfigured OIDC can't lock you out — set it and redeploy to recover, then unset to manage sign-in from the UI again. `OFF` = no sign-in; `Standard` = local username/password only (OIDC off); `OIDC` = OIDC on (local login kept as a fallback). | (empty = use UI settings) | `OFF`, `Standard`, `OIDC` (case-insensitive). | |
+| `LOGIN_TYPE` | **Sign-in override / lockout recovery.** When set, forces the login mode regardless of the Admin-UI setting, so a misconfigured OIDC can't lock you out — set it and redeploy to recover, then unset to manage sign-in from the UI again. `OFF` = no sign-in, but only until an admin account exists — after that `OFF` is upgraded to `Standard` so auth can't be bypassed via the env var (it still disables a broken OIDC, which is the recovery); `Standard` = local username/password only (OIDC off); `OIDC` = OIDC on (local login kept as a fallback). | (empty = use UI settings) | `OFF`, `Standard`, `OIDC` (case-insensitive). | |
 
 ## Logging
 
@@ -85,10 +85,17 @@ Home Depot). With no token, those stores simply can't be read.
 > **scrape.do requires a free account.** Sign up at <https://scrape.do> (no card)
 > and copy your API token. The free tier is **1,000 credits/month**, and a
 > protected fetch (residential `super` + `render`, the default) costs **25
-> credits** — so roughly **40 protected-store fetches/month** for free. Enough
-> for a few anti-bot-protected products checked ~daily; heavier use needs a paid
-> plan. See the README's "Scraping anti-bot-protected stores" section for the
-> full rundown.
+> credits** — so roughly **40 protected-store fetches/month** for free. Keep
+> protected products on an infrequent schedule (≈ once a day): checking one
+> hourly would drain the whole monthly allowance in under two days. Heavier use
+> needs a paid plan. See the README's "Scraping anti-bot-protected stores"
+> section for the full rundown.
+>
+> **These `SCRAPEDO_*` variables are seed defaults only.** scrape.do can be
+> enabled and fully configured on the **Settings → Scraping API** page (token,
+> enable toggle, render/residential, geo, timeout, credit allowance), and those
+> stored values override the env vars below. The same page shows the credit/usage
+> meter.
 
 | Variable | Description | Default | Possible values | Required |
 | --- | --- | --- | --- | --- |
@@ -98,7 +105,7 @@ Home Depot). With no token, those stores simply can't be read.
 | `FETCH_TIMEOUT_SECONDS` | Per-request fetch timeout (free engines). | `15.0` | Positive number (seconds). | |
 | `PER_DOMAIN_MIN_SECONDS` | Minimum gap between two requests to the same host (background checks only; the interactive "Add product" import skips it). | `20` | Integer ≥ 0 (seconds). | |
 | `FETCH_JITTER_SECONDS` | Random delay added before each background fetch, on top of the per-domain gap. | `20` | Integer ≥ 0 (seconds). | |
-| `SCRAPEDO_TOKEN` | scrape.do API token. Empty = the paid engine is disabled. | (empty) | Your scrape.do token. | |
+| `SCRAPEDO_TOKEN` | scrape.do API token (seed default). Empty = the paid engine is disabled, unless a token is set on the Settings page. The engine also requires the **Enable scrape.do** toggle (on by default when a token is present). | (empty) | Your scrape.do token. | |
 | `SCRAPEDO_RENDER` | Run JS in scrape.do's headless browser. | `true` | `true` or `false`. | |
 | `SCRAPEDO_SUPER` | Use scrape.do residential/mobile proxies (needed for Akamai). Costs more credits. | `true` | `true` or `false`. | |
 | `SCRAPEDO_GEO` | scrape.do `geoCode` (proxy country). | `US` | ISO country code, or blank. | |

@@ -14,14 +14,15 @@ import re
 from datetime import datetime
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings as env
 from app.models import Setting
 
 # Keys whose stored value is encrypted and never echoed back to the UI.
-SECRET_KEYS = {"smtp_password", "email_api_key", "telegram_bot_token", "oidc_client_secret"}
+SECRET_KEYS = {"smtp_password", "email_api_key", "telegram_bot_token", "oidc_client_secret",
+               "scrapedo_token"}
 
 # Default message templates (the user's wording, made safe for increases too).
 DEFAULT_TEMPLATES = {
@@ -54,6 +55,15 @@ def _defaults() -> dict[str, str]:
         "email_api_domain": "",                       # used by Mailgun
         "email_html": "0",
         "telegram_bot_token": env.telegram_bot_token,
+        # scrape.do paid fallback engine (editable on the Settings page).
+        # Seeded from env so an existing SCRAPEDO_TOKEN deployment stays active.
+        "scrapedo_enabled": "1" if env.scrapedo_token else "0",
+        "scrapedo_token": env.scrapedo_token,
+        "scrapedo_render": "1" if env.scrapedo_render else "0",
+        "scrapedo_super": "1" if env.scrapedo_super else "0",
+        "scrapedo_geo": env.scrapedo_geo,
+        "scrapedo_timeout_seconds": str(env.scrapedo_timeout_seconds),
+        "scrapedo_monthly_credits": str(env.scrapedo_monthly_credits),
         "notifications_paused": "0",
         "quiet_enabled": "0",
         "quiet_start": "22:00",
@@ -129,11 +139,30 @@ _LOGIN_OVERRIDES = {
 _LOGIN_LABELS = {"off": "OFF", "none": "OFF", "disabled": "OFF",
                  "standard": "Standard", "local": "Standard",
                  "oidc": "OIDC", "sso": "OIDC"}
+# LOGIN_TYPE values that would disable sign-in entirely.
+_LOGIN_OFF = {"off", "none", "disabled"}
 
 
-def login_type_override() -> str:
-    """Normalized LOGIN_TYPE label ('OFF'|'Standard'|'OIDC') if set, else ''."""
-    return _LOGIN_LABELS.get((env.login_type or "").strip().lower(), "")
+def _admin_exists(db: Session) -> bool:
+    """True if any admin account exists. Used to stop LOGIN_TYPE=off from
+    disabling sign-in once there's an admin to protect."""
+    from app.models import User  # lazy import: keep module load free of cycles
+    try:
+        return (db.execute(
+            select(func.count()).select_from(User).where(User.role == "admin")
+        ).scalar() or 0) > 0
+    except Exception:  # noqa: BLE001 - users table not ready (fresh install) → no admin yet
+        return False
+
+
+def login_type_override(db: Session | None = None) -> str:
+    """Effective forced-login label ('OFF'|'Standard'|'OIDC') if LOGIN_TYPE is set,
+    else ''. An 'off' override is reported as 'Standard' once an admin account
+    exists — matching the security upgrade applied in :func:`get_config`."""
+    label = _LOGIN_LABELS.get((env.login_type or "").strip().lower(), "")
+    if label == "OFF" and db is not None and _admin_exists(db):
+        return "Standard"
+    return label
 
 
 def get_config(db: Session) -> dict[str, str]:
@@ -143,9 +172,16 @@ def get_config(db: Session) -> dict[str, str]:
     for row in rows:
         if row.key in cfg or row.key in SECRET_KEYS:
             cfg[row.key] = _decrypt(row.value or "") if row.key in SECRET_KEYS else (row.value or "")
-    # LOGIN_TYPE env wins over stored values so OIDC can't lock anyone out.
-    override = _LOGIN_OVERRIDES.get((env.login_type or "").strip().lower())
+    # LOGIN_TYPE env wins over stored values so OIDC can't lock anyone out. One
+    # exception, for security: an "off" override must NOT disable sign-in once an
+    # admin account exists, or anyone could bypass auth by setting LOGIN_TYPE=off.
+    # In that case force Standard (local) login instead. "off" still works as the
+    # anti-lockout recovery switch on a fresh install (no admin yet).
+    login_key = (env.login_type or "").strip().lower()
+    override = _LOGIN_OVERRIDES.get(login_key)
     if override:
+        if login_key in _LOGIN_OFF and _admin_exists(db):
+            override = _LOGIN_OVERRIDES["standard"]
         cfg.update(override)
     return cfg
 
@@ -164,7 +200,39 @@ def get_public(db: Session) -> dict:
     public["oidc_enabled_b"] = cfg.get("oidc_enabled") == "1"
     public["oidc_auto_provision_b"] = cfg.get("oidc_auto_provision") == "1"
     public["allow_local_login_b"] = cfg.get("allow_local_login", "1") == "1"
+    public["scrapedo_enabled_b"] = cfg.get("scrapedo_enabled") == "1"
+    public["scrapedo_render_b"] = cfg.get("scrapedo_render") == "1"
+    public["scrapedo_super_b"] = cfg.get("scrapedo_super") == "1"
     return public
+
+
+def scrapedo_settings(db: Session) -> dict:
+    """Effective scrape.do config, typed, for the fetch engine.
+
+    DB-stored values (set on the Settings page) win over the ``.env`` seed
+    defaults. ``active`` is the gate the engine uses: a token must be present and
+    the toggle on.
+    """
+    cfg = get_config(db)
+
+    def _num(key, fallback, cast):
+        try:
+            return cast(cfg.get(key) or fallback)
+        except (TypeError, ValueError):
+            return fallback
+
+    token = cfg.get("scrapedo_token", "")
+    enabled = cfg.get("scrapedo_enabled") == "1"
+    return {
+        "token": token,
+        "enabled": enabled,
+        "active": bool(enabled and token),
+        "render": cfg.get("scrapedo_render") == "1",
+        "super": cfg.get("scrapedo_super") == "1",
+        "geo": (cfg.get("scrapedo_geo") or "").strip(),
+        "timeout": _num("scrapedo_timeout_seconds", env.scrapedo_timeout_seconds, float),
+        "monthly_credits": _num("scrapedo_monthly_credits", env.scrapedo_monthly_credits, int),
+    }
 
 
 def set_values(db: Session, values: dict[str, str | None], *, keep_blank_secrets: bool = True) -> None:

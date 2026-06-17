@@ -36,6 +36,7 @@ from app.services.politeness import (
     domain_of,
     engine_order,
     http_get,
+    scrapedo_active,
 )
 
 log = logging.getLogger("importer")
@@ -522,17 +523,18 @@ def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
             log.debug("import ok via %s: %r price=%s %s", engine, meta.name, meta.price, meta.currency)
             return meta  # has at least a name; good enough to add + monitor
 
-    # When the free engines can't read a store and scrape.do isn't configured,
+    # When the free engines can't read a store and scrape.do isn't active,
     # point the user at it — that's the supported way to handle anti-bot retailers.
+    scrapedo_on = scrapedo_active()
     configure_hint = (
-        "" if settings.scrapedo_token else
-        " To import from anti-bot-protected retailers like this one, configure the"
-        " scrape.do API (set SCRAPEDO_TOKEN) — see the Settings page."
+        "" if scrapedo_on else
+        " To import from anti-bot-protected retailers like this one, enable the"
+        " scrape.do API on the Settings page."
     )
 
     if blocked is not None:
         msg = f"The store blocked automated access (HTTP {blocked})."
-        if settings.scrapedo_token:
+        if scrapedo_on:
             msg += " scrape.do could not get past it either."
         return ProductMetadata(ok=False, store_name=dom, error=msg + configure_hint)
     if http_err is not None:
