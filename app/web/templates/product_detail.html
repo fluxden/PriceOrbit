@@ -45,12 +45,12 @@
       <div class="pb__health pb__health--{{ detail.health.status }}">
         <span class="pb__health-dot" aria-hidden="true"></span>
         {% if detail.health.status == 'failing' %}Checks failing — {{ detail.health.consecutive_failures }} in a row{% if detail.health.last_error %} · {{ detail.health.last_error }}{% endif %}
-        {% elif detail.health.status == 'stale' %}No successful check recently{% if detail.health.last_checked %} · last {{ detail.health.last_checked.strftime('%b %d, %H:%M') }}{% endif %}
+        {% elif detail.health.status == 'stale' %}No successful check recently{% if detail.health.last_checked %} · last {{ detail.health.last_checked.strftime('%b %d') }}, {{ detail.health.last_checked | clock(time_format) }}{% endif %}
         {% elif detail.health.status == 'new' %}Awaiting first check
         {% elif detail.health.status == 'paused' %}Monitoring paused
         {% elif detail.health.status == 'off' %}Monitoring off
-        {% else %}Monitoring healthy{% if detail.health.last_checked %} · last checked {{ detail.health.last_checked.strftime('%b %d, %H:%M') }}{% endif %}{% endif %}
-        {% if detail.health.next_run and detail.health.status not in ['paused', 'off'] %}<span class="pb__health-next">· next ~{{ detail.health.next_run.strftime('%b %d, %H:%M') }}</span>{% endif %}
+        {% else %}Monitoring healthy{% if detail.health.last_checked %} · last checked {{ detail.health.last_checked.strftime('%b %d') }}, {{ detail.health.last_checked | clock(time_format) }}{% endif %}{% endif %}
+        {% if detail.health.next_run and detail.health.status not in ['paused', 'off'] %}<span class="pb__health-next">· next ~{{ detail.health.next_run.strftime('%b %d') }}, {{ detail.health.next_run | clock(time_format) }}</span>{% endif %}
       </div>
       {% if detail.product.description %}<p class="pb__desc">{{ detail.product.description }}</p>{% endif %}
     </div>
@@ -142,7 +142,7 @@
       </div>
       <details class="store__edit">
         <summary>Edit</summary>
-        {% set tok = 'inherit' if not s.schedule_override else ('daily' if s.schedule_kind == 'daily' else (s.check_interval_minutes|string if s.check_interval_minutes in [1,5,15,60,360,720,1440] else 'custom')) %}
+        {% set tok = 'inherit' if not s.schedule_override else ('daily' if s.schedule_kind == 'daily' else (s.check_interval_minutes|string if s.check_interval_minutes in [1,5,15,60,360,720] else 'custom')) %}
         <form method="post" action="/products/{{ detail.product.id }}/stores/{{ s.id }}/edit" class="store__editform">
           <div class="field"><label>Store URL</label><input type="url" name="url" value="{{ s.url }}" /></div>
           <div class="field"><label>Check schedule</label>
@@ -151,7 +151,7 @@
               {% for value, label in frequency_choices %}<option value="{{ value }}" {{ 'selected' if tok == value }}>{{ label }}</option>{% endfor %}
             </select>
             <div class="field__inline"><input type="number" name="custom_minutes" min="1" placeholder="Custom minutes" value="{{ s.check_interval_minutes if tok == 'custom' else '' }}" />
-              <input type="time" name="daily_time" value="{{ s.daily_check_time or '09:00' }}" /><span class="field__hint">custom / daily values</span></div>
+              <input type="time" name="daily_time" value="{{ s.daily_check_time or '08:00' }}" /><span class="field__hint">custom / daily values</span></div>
           </div>
           <label class="check"><input type="checkbox" name="make_primary" value="1" {{ 'checked' if s.is_primary }} {{ 'disabled' if s.is_primary }} /> Primary store (defines product identity)</label>
           <div class="form-actions">
@@ -178,9 +178,9 @@
 </section>
 
 <!-- Product schedule + monitors -->
-{% set ptok = 'daily' if detail.product.schedule_kind == 'daily' else (detail.product.check_interval_minutes|string if detail.product.check_interval_minutes in [1,5,15,60,360,720,1440] else 'custom') %}
+{% set ptok = 'daily' if detail.product.schedule_kind == 'daily' else (detail.product.check_interval_minutes|string if detail.product.check_interval_minutes in [1,5,15,60,360,720] else 'custom') %}
 <form class="form-card" method="post" action="/products/{{ detail.product.id }}/schedule">
-  <h2 class="card-title">Default check schedule</h2>
+  <h2 class="card-title">Update Frequency</h2>
   <div class="field">
     <label for="frequency">Check frequency <span class="field__opt">(applies to stores using the default)</span></label>
     <select id="frequency" name="frequency">
@@ -190,7 +190,7 @@
       <input type="number" name="custom_minutes" min="1" placeholder="Minutes" value="{{ detail.product.check_interval_minutes if ptok == 'custom' else '' }}" />
     </div>
     <div class="field__inline" id="row-daily" hidden>
-      <input type="time" name="daily_time" value="{{ detail.product.daily_check_time or '09:00' }}" />
+      <input type="time" name="daily_time" value="{{ detail.product.daily_check_time or '08:00' }}" />
     </div>
   </div>
   <div class="field"><label>Monitor</label>

@@ -34,7 +34,7 @@ from app.models import (
 )
 from app.services import alerting, audit, auth, checker, health, notify, oidc, politeness, schedule, settings_store
 from app.services.importer import ProductMetadata, import_from_url
-from app.services.overview import build_rows, format_price, schedule_display
+from app.services.overview import build_rows, format_clock, format_price, schedule_display
 from app.services.product_detail import (
     MONEY_TRIGGERS,
     PERCENT_TRIGGERS,
@@ -44,6 +44,9 @@ from app.services.product_detail import (
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+# `{{ some_time | clock(time_format) }}` — render an "HH:MM" string or datetime
+# in the user's configured 12/24-hour format.
+templates.env.filters["clock"] = format_clock
 router = APIRouter()
 
 PAGE_SIZE = 24
@@ -54,11 +57,15 @@ SORT_OPTIONS = {
     "price_desc": "Price (high to low)",
     "drop": "Biggest drop",
 }
+# "Every day" maps to the DAILY schedule kind (once per day at a chosen time),
+# not a 1440-minute interval — so picking it reveals the time selector.
 FREQUENCY_CHOICES = [
     ("1", "Every 1 minute"), ("5", "Every 5 minutes"), ("15", "Every 15 minutes"),
     ("60", "Every hour"), ("360", "Every 6 hours"), ("720", "Every 12 hours"),
-    ("1440", "Every day"), ("daily", "Daily at a set time"), ("custom", "Custom interval"),
+    ("daily", "Every day"), ("custom", "Custom interval"),
 ]
+# Default schedule applied to newly added products: once per day at 8:00 AM.
+DEFAULT_DAILY_TIME = "08:00"
 CONDITION_CHOICES = [
     ("any_drop", "Any price drop"),
     ("below_target", "Price below target"),
@@ -77,7 +84,7 @@ NAV_ITEMS = [
 
 
 def _base_context(request: Request, active: str) -> dict:
-    theme_style, theme_base, cur_user, login_on = "", "", None, False
+    theme_style, theme_base, cur_user, login_on, time_format = "", "", None, False, "24"
     try:
         from app.database import SessionLocal
         _db = SessionLocal()
@@ -86,6 +93,7 @@ def _base_context(request: Request, active: str) -> dict:
             theme_style = settings_store.theme_css(_cfg)
             theme_base = _cfg.get("theme_base", "") or ""
             login_on = _cfg.get("login_enabled", "0") == "1"
+            time_format = _cfg.get("time_format", "24") or "24"
             cur_user = auth.current_user(request, _db)
         finally:
             _db.close()
@@ -99,7 +107,7 @@ def _base_context(request: Request, active: str) -> dict:
         nav = NAV_ITEMS + [("profile", "Profile", "/profile")]
     return {"request": request, "app_name": settings.app_name, "active": active,
             "nav_items": nav, "theme_style": theme_style, "theme_base": theme_base,
-            "current_user": cur_user, "login_enabled": login_on}
+            "current_user": cur_user, "login_enabled": login_on, "time_format": time_format}
 
 
 def _sorted(rows: list, sort: str) -> list:
@@ -147,7 +155,8 @@ def _list_context(request, db, *, active, monitor, tab, q, sort, store, tag, ins
     tab = tab if tab in ("overview", "favorites") else "overview"
     sort = sort if sort in SORT_OPTIONS else "recent"
 
-    all_rows = build_rows(db, monitor, owner_id=_scope_owner(request, db))
+    time_format = settings_store.get_public(db).get("time_format", "24") or "24"
+    all_rows = build_rows(db, monitor, owner_id=_scope_owner(request, db), time_format=time_format)
     store_options = sorted({d for r in all_rows for d in r.domains})
     tag_options = sorted({t["name"] for r in all_rows for t in r.tags})
     kpis = {
@@ -249,7 +258,7 @@ def _schedule_from_form(frequency: str, custom_minutes: str, daily_time: str):
     """Returns (schedule_kind, check_interval_minutes, daily_check_time)."""
     floor = settings.min_check_interval_minutes
     if frequency == "daily":
-        t = (daily_time or "09:00")[:5]
+        t = (daily_time or DEFAULT_DAILY_TIME)[:5]
         return ScheduleKind.DAILY, None, t
     if frequency == "custom":
         try:
@@ -273,7 +282,8 @@ def _add_form_context(request, db, **extra):
         "condition_choices": CONDITION_CHOICES,
         "accounts": accounts,
         "tag_options": tag_options,
-        "form": {"frequency": "60", "condition": "any_drop", "monitor_price": True, "monitor_stock": False},
+        "form": {"frequency": "daily", "daily_time": DEFAULT_DAILY_TIME, "condition": "any_drop",
+                 "monitor_price": True, "monitor_stock": False},
         "preview": None,
         "duplicate": None,
         "error": None,
@@ -286,8 +296,8 @@ def _add_form_context(request, db, **extra):
 def add_product_form(request: Request, db: Session = Depends(get_db), monitor: str = ""):
     extra = {}
     if monitor == "stock":
-        extra["form"] = {"frequency": "60", "condition": "back_in_stock",
-                         "monitor_price": True, "monitor_stock": True}
+        extra["form"] = {"frequency": "daily", "daily_time": DEFAULT_DAILY_TIME,
+                         "condition": "back_in_stock", "monitor_price": True, "monitor_stock": True}
     return templates.TemplateResponse(request, "add_product.html", _add_form_context(request, db, **extra))
 
 
@@ -314,7 +324,7 @@ def add_product_submit(
     action: str = Form("preview"),
     url: str = Form(""),
     bulk_urls: str = Form(""),
-    frequency: str = Form("60"),
+    frequency: str = Form("daily"),
     custom_minutes: str = Form(""),
     daily_time: str = Form(""),
     monitor_price: str = Form(""),
@@ -459,7 +469,7 @@ def quick_add(request: Request, url: str = Form(""), db: Session = Depends(get_d
     domain = urlparse(norm).netloc.lower().removeprefix("www.")
     p = Product(name=f"Pending — {domain}", track_price=True, import_status=ImportStatus.PENDING,
                 user_id=_scope_owner(request, db),
-                check_interval_minutes=60)
+                schedule_kind=ScheduleKind.DAILY, daily_check_time=DEFAULT_DAILY_TIME)
     p.urls.append(ProductURL(url=norm, domain=domain, store_name=domain))
     db.add(p)
     db.commit()
@@ -1653,13 +1663,14 @@ def product_detail(product_id: int, request: Request, db: Session = Depends(get_
         ctx = _base_context(request, "price")
         ctx.update({"title": "Product not found", "blurb": "This product may have been deleted."})
         return templates.TemplateResponse(request, "_placeholder.html", ctx)
-    detail = build_detail(db, p)
     ctx = _base_context(request, "price")
+    tf = ctx.get("time_format", "24")
+    detail = build_detail(db, p, time_format=tf)
     ctx.update({
         "detail": detail,
         "frequency_choices": FREQUENCY_CHOICES,
         "trigger_choices": TRIGGER_CHOICES,
-        "product_schedule_label": schedule_display(p),
+        "product_schedule_label": schedule_display(p, tf),
         "target_display": format_price(p.target_price, detail.currency) if p.target_price else None,
         "tags_text": ", ".join(t.name for t in p.tags),
         "flash_added": added == "1", "flash_msg": msg, "flash_error": error,

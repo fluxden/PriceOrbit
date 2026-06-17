@@ -36,9 +36,31 @@ def format_price(price: Decimal | None, currency: str | None) -> str:
     return f"{currency} {amount}" if currency else amount
 
 
-def schedule_display(product: Product) -> str:
+def format_clock(value, time_format: str = "24") -> str:
+    """Render a time as "HH:MM" (24h) or "h:MM AM/PM" (12h).
+
+    Accepts an "HH:MM" string or anything with .hour/.minute (e.g. a datetime),
+    so the same helper drives schedule labels and template time output. Honours
+    the 12/24-hour preference from the Settings page.
+    """
+    if value is None or value == "":
+        return ""
+    if hasattr(value, "hour"):
+        h, m = value.hour, value.minute
+    else:
+        try:
+            h, m = (int(x) for x in str(value).split(":")[:2])
+        except (TypeError, ValueError):
+            return str(value)
+    if str(time_format) == "12":
+        suffix = "AM" if h < 12 else "PM"
+        return f"{(h % 12) or 12}:{m:02d} {suffix}"
+    return f"{h:02d}:{m:02d}"
+
+
+def schedule_display(product: Product, time_format: str = "24") -> str:
     if product.schedule_kind == "daily" and product.daily_check_time:
-        return f"Daily {product.daily_check_time}"
+        return f"Daily {format_clock(product.daily_check_time, time_format)}"
     mins = product.check_interval_minutes
     if not mins:
         return "Not scheduled"
@@ -98,7 +120,8 @@ def _recently_restocked(db: Session, url: ProductURL) -> bool:
     return len(states) >= 2 and bool(states[0]) and not bool(states[1])
 
 
-def build_rows(db: Session, monitor: str | None = None, owner_id: int | None = None) -> list[OverviewRow]:
+def build_rows(db: Session, monitor: str | None = None, owner_id: int | None = None,
+               time_format: str = "24") -> list[OverviewRow]:
     """monitor: None (all), 'price' (track_price), or 'stock' (track_stock)."""
     now = datetime.utcnow()
     products = (
@@ -177,7 +200,7 @@ def build_rows(db: Session, monitor: str | None = None, owner_id: int | None = N
                 change_pct=change_pct,
                 change_dir=change_dir,
                 paused=paused,
-                schedule=schedule_display(p),
+                schedule=schedule_display(p, time_format),
                 last_checked=last_checked,
                 target_price=p.target_price,
                 target_display=format_price(p.target_price, win.currency if win else None)

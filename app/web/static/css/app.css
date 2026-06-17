@@ -71,6 +71,10 @@
 }
 
 * { box-sizing: border-box; }
+/* The HTML `hidden` attribute must win over component display rules (e.g.
+   `.field__inline { display: flex }`), otherwise JS-toggled rows like the
+   daily-time / custom-interval pickers stay visible. */
+[hidden] { display: none !important; }
 html, body { margin: 0; padding: 0; }
 body {
   background:
@@ -428,6 +432,13 @@ button { font-family: inherit; cursor: pointer; }
 .form-card textarea { resize: vertical; font-family: var(--mono); font-size: .85rem; }
 .form-card input:focus, .form-card select:focus, .form-card textarea:focus {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak);
+}
+/* The native time/date picker indicator is a dark glyph — invert it in dark mode
+   so the clickable clock stays visible against the dark field background. */
+[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.4);
+  cursor: pointer;
 }
 
 /* Password / token fields: show-hide toggle (wrapper added by app.js) */
