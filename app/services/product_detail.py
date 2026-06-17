@@ -23,7 +23,7 @@ from app.models import (
     Product,
     ProductURL,
 )
-from app.services.overview import _INTERVAL_LABELS, format_price
+from app.services.overview import _INTERVAL_LABELS, format_clock, format_price
 from app.config import settings
 from app.services import health
 
@@ -42,10 +42,10 @@ _TRIGGER_LABELS = {
 }
 
 
-def store_schedule_display(url: ProductURL, product: Product) -> tuple[str, bool]:
+def store_schedule_display(url: ProductURL, product: Product, time_format: str = "24") -> tuple[str, bool]:
     """Returns (label, is_override). Inherits the product schedule when unset."""
     if url.schedule_kind == "daily" and url.daily_check_time:
-        return f"Daily {url.daily_check_time}", True
+        return f"Daily {format_clock(url.daily_check_time, time_format)}", True
     if url.schedule_kind == "interval":
         return f"Every {_INTERVAL_LABELS.get(url.check_interval_minutes, f'{url.check_interval_minutes}m')}", True
     return "Default", False
@@ -79,7 +79,7 @@ class ProductDetail:
     health: dict = field(default_factory=dict)
 
 
-def build_detail(db: Session, product: Product) -> ProductDetail:
+def build_detail(db: Session, product: Product, time_format: str = "24") -> ProductDetail:
     urls = sorted(product.urls, key=lambda u: (not u.is_primary, u.id))
     detail = ProductDetail(product=product)
 
@@ -104,7 +104,7 @@ def build_detail(db: Session, product: Product) -> ProductDetail:
         ]
         if (not detail.mixed_currency) or (u.currency == detail.currency):
             all_prices.extend(pt["p"] for pt in series_points)
-        sched_label, is_override = store_schedule_display(u, product)
+        sched_label, is_override = store_schedule_display(u, product, time_format)
         detail.series.append({
             "id": u.id, "store": u.store_name or u.domain or f"Store {i+1}",
             "color": SERIES_COLORS[i % len(SERIES_COLORS)], "points": series_points,
