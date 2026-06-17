@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Admin · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left">
+    <h1 class="page-title">Admin</h1>
+    <p class="page-sub">Database, security &amp; sign-in, login page, SSO, and logs.</p>
+  </div>
+</div>
+
+<!-- Quick links to admin tools -->
+<section class="form-card">
+  <h2 class="card-title">Tools</h2>
+  <div class="backup-row">
+    <a class="btn" href="/admin/logs">Logs &amp; debug</a>
+    <a class="btn" href="/users">Manage users</a>
+  </div>
+</section>
+
+<!-- Database & status -->
+<section class="form-card">
+  <h2 class="card-title">Database &amp; status</h2>
+  <div class="status-grid">
+    <div class="stat"><span class="stat__k">App version</span><span class="stat__v">{{ status.app_version }}</span></div>
+    <div class="stat"><span class="stat__k">Database</span><span class="stat__v">{{ 'connected' if status.db_ok else 'unreachable' }} <span class="dot {{ 'dot--ok' if status.db_ok else 'dot--bad' }}"></span></span></div>
+    <div class="stat"><span class="stat__k">Engine</span><span class="stat__v">{{ status.db_engine }}</span></div>
+    <div class="stat"><span class="stat__k">Host / DB</span><span class="stat__v">{{ status.db_host }} / {{ status.db_name }}</span></div>
+    <div class="stat"><span class="stat__k">Migration</span><span class="stat__v">{{ status.migration }}</span></div>
+  </div>
+  <details class="db-help">
+    <summary>Use an external database / MariaDB</summary>
+    <p class="field__hint">The connection is set by environment variables (it can’t be edited here, since the app needs the database before it can read any saved setting). To point at an external server, set these on the <span class="mono">app</span> service and remove the bundled <span class="mono">db</span> service from <span class="mono">docker-compose.yml</span>:</p>
+    <pre class="codeblock">DB_HOST=your-db-host
+DB_PORT=3306
+DB_NAME=priceorbit
+DB_USER=priceorbit
+DB_PASSWORD=your-password</pre>
+    <p class="field__hint">The database is always its own container (MySQL 8 or MariaDB 11); only the app image is bundled.</p>
+  </details>
+</section>
+
+<!-- Security & sign-in -->
+<section class="form-card">
+  <h2 class="card-title">Security &amp; sign-in</h2>
+  {% if login_locked %}<div class="notice notice--warn">Sign-in is forced to <strong>{{ login_locked }}</strong> by the <span class="mono">LOGIN_TYPE</span> environment variable — changes saved here are ignored until it's unset. (This is the recovery switch for an OIDC lockout: set <span class="mono">LOGIN_TYPE=OFF</span> or <span class="mono">Standard</span> and redeploy.)</div>{% endif %}
+  {% if not admin_exists %}
+  <div class="notice notice--warn">Login can’t be enabled until an admin user exists. Create one below first.</div>
+  <form method="post" action="/settings/security/admin" class="stack">
+    <div class="detail-grid">
+      <div class="field"><label>Admin username</label><input type="text" name="username" autocomplete="username" placeholder="At least 3 characters" /></div>
+      <div class="field"><label>Password</label><input type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters" /></div>
+    </div>
+    <div class="field"><label>Confirm password</label><input type="password" name="confirm" autocomplete="new-password" /></div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Create admin user</button></div>
+  </form>
+  {% else %}
+  <p class="field__hint"><span class="badge-verified">✓ admin exists</span> An admin account is set up{% if current_user %} — signed in as <strong>{{ current_user.username }}</strong>{% endif %}.</p>
+  <form method="post" action="/settings/security/login" class="stack">
+    <label class="check"><input type="checkbox" name="login_enabled" value="1" {{ 'checked' if cfg.login_enabled == '1' }} {{ 'disabled' if login_locked }} /> Require sign-in to use PriceOrbit</label>
+    <div class="form-actions"><button class="btn btn--primary" type="submit" {{ 'disabled' if login_locked }}>Save sign-in setting</button></div>
+  </form>
+  <div class="backup-row">
+    <a class="btn" href="/users">Manage users</a>
+  </div>
+  <p class="field__hint">Admins manage all settings and users. Regular users get their own products and a profile page, but can’t change app-wide settings, users, or security.</p>
+  {% endif %}
+</section>
+
+<!-- Login page customization -->
+<section class="form-card">
+  <h2 class="card-title">Login page</h2>
+  <form method="post" action="/settings/login" enctype="multipart/form-data" class="stack">
+    <div class="detail-grid">
+      <div class="field"><label>Heading</label><input type="text" name="heading" value="{{ cfg.login_heading }}" placeholder="{{ app_name }}" /></div>
+      <div class="field"><label>Subtext</label><input type="text" name="subtext" value="{{ cfg.login_subtext }}" placeholder="Sign in to continue." /></div>
+    </div>
+    <div class="detail-grid">
+      <div class="field"><label>Logo image <span class="field__opt">(PNG/SVG, ≤2 MB)</span></label>
+        <input type="file" name="logo" accept="image/*" />
+        {% if cfg.login_logo %}<label class="check"><input type="checkbox" name="remove_logo" value="1" /> Remove current logo</label>{% endif %}
+      </div>
+      <div class="field"><label>Background <span class="field__opt">(color or image)</span></label>
+        <input type="text" name="bg_color" value="{{ '' if cfg.login_bg.startswith('url(') else cfg.login_bg }}" placeholder="#0a0f1e or leave blank" />
+        <input type="file" name="background" accept="image/*" />
+        {% if cfg.login_bg %}<label class="check"><input type="checkbox" name="remove_bg" value="1" /> Remove background</label>{% endif %}
+      </div>
+    </div>
+    <p class="field__hint">A background image overrides the color; the login page also respects your theme. <a href="/login" target="_blank">Open /login</a> to preview.</p>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Save login page</button></div>
+  </form>
+</section>
+
+<!-- Single sign-on (OIDC) -->
+<section class="form-card">
+  <h2 class="card-title">Single sign-on (OIDC)</h2>
+  {% if login_locked %}<div class="notice notice--warn">OIDC is currently controlled by <span class="mono">LOGIN_TYPE={{ login_locked }}</span> — saving here has no effect until that env var is unset.</div>{% endif %}
+  <form method="post" action="/settings/security/oidc" class="stack">
+    <label class="check"><input type="checkbox" name="oidc_enabled" value="1" {{ 'checked' if cfg.oidc_enabled_b }} {{ 'disabled' if login_locked }} /> Enable SSO sign-in</label>
+    <div class="detail-grid">
+      <div class="field"><label>Button label</label><input type="text" name="oidc_provider_name" value="{{ cfg.oidc_provider_name }}" placeholder="e.g. Google, Okta, Authentik" /></div>
+      <div class="field"><label>Default role for new users</label>
+        <select name="oidc_default_role">
+          <option value="user" {{ 'selected' if cfg.oidc_default_role != 'admin' }}>User</option>
+          <option value="admin" {{ 'selected' if cfg.oidc_default_role == 'admin' }}>Admin</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>Issuer URL</label><input type="url" name="oidc_issuer" value="{{ cfg.oidc_issuer }}" placeholder="https://idp.example.com/realms/main" /></div>
+    <div class="detail-grid">
+      <div class="field"><label>Client ID</label><input type="text" name="oidc_client_id" value="{{ cfg.oidc_client_id }}" autocomplete="off" /></div>
+      <div class="field"><label>Client secret {% if cfg.oidc_client_secret_is_set %}<span class="field__opt">(saved)</span>{% endif %}</label>
+        <input type="password" name="oidc_client_secret" placeholder="{{ '••••••••' if cfg.oidc_client_secret_is_set else '' }}" autocomplete="off" /></div>
+    </div>
+    <div class="field"><label>Scopes</label><input type="text" name="oidc_scopes" value="{{ cfg.oidc_scopes }}" placeholder="openid email profile" /></div>
+    <label class="check"><input type="checkbox" name="oidc_auto_provision" value="1" {{ 'checked' if cfg.oidc_auto_provision_b }} /> Create an account automatically on first SSO sign-in</label>
+    <label class="check"><input type="checkbox" name="allow_local_login" value="1" {{ 'checked' if cfg.allow_local_login_b }} /> Allow local username / password sign-in</label>
+    <p class="field__hint">Redirect URI to register with your provider:<br><code>{{ request.base_url }}auth/oidc/callback</code></p>
+    <p class="field__hint">Turn off local sign-in only after SSO works, or you may lock yourself out. The issuer must serve <code>/.well-known/openid-configuration</code>, and behind a proxy the app must see the external HTTPS host so the redirect URI matches.</p>
+    <div class="form-actions"><button class="btn btn--primary" type="submit" {{ 'disabled' if login_locked }}>Save SSO settings</button></div>
+  </form>
+</section>
+{% endblock %}

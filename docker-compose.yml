@@ -1,0 +1,58 @@
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: priceorbit
+      MARIADB_USER: priceorbit
+      MARIADB_PASSWORD: CHANGE_ME
+      MARIADB_ROOT_PASSWORD: CHANGE_ME
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: ghcr.io/fluxden/priceorbit:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_NAME: PriceOrbit
+      APP_SECRET: CHANGE_ME
+      TIMEZONE: UTC
+      DB_DRIVER: mysql+pymysql
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: priceorbit
+      DB_USER: priceorbit
+      DB_PASSWORD: CHANGE_ME
+      # Optional: enable the scrape.do fallback for anti-bot stores (Home Depot,
+      # etc.). Leave unset to disable. Free tier: https://scrape.do
+      # SCRAPEDO_TOKEN: CHANGE_ME
+      # Optional: initial log level (fatal|error|warn|info|debug|trace).
+      # Also editable at runtime in Admin → Logs.
+      # LOG_LEVEL: info
+      # Optional: force sign-in mode (lockout recovery). OFF | Standard | OIDC.
+      # Overrides the Admin sign-in/OIDC settings; unset to manage from the UI.
+      # LOGIN_TYPE: Standard
+    ports:
+      - "8800:8000"
+    networks:
+      - proxy
+    volumes:
+      - uploads_data:/data/uploads
+
+volumes:
+  db_data:
+  uploads_data:
+
+networks:
+  proxy:
+    external: true

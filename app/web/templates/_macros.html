@@ -1,0 +1,95 @@
+{% macro change_badge(row) -%}
+  {% if row.change_dir == 'down' %}
+    <span class="badge badge--down" title="Down since you started tracking">▼ {{ '%.1f'|format(row.change_pct|abs) }}%</span>
+  {% elif row.change_dir == 'up' %}
+    <span class="badge badge--up" title="Up since you started tracking">▲ {{ '%.1f'|format(row.change_pct|abs) }}%</span>
+  {% elif row.change_dir == 'flat' %}
+    <span class="badge badge--flat" title="No change">±0%</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro import_chip(row) -%}
+  {% if row.import_status == 'pending' %}<span class="chip chip--pending">Pending import</span>
+  {% elif row.import_status == 'importing' %}<span class="chip chip--importing">Importing…</span>
+  {% elif row.import_status == 'failed' %}<span class="chip chip--failed">Import failed</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro product_card(row, price_focus=false, stock_border=false, selectable=false) -%}
+<article class="product{% if stock_border %} {{ 'is-instock' if row.in_stock else 'is-outofstock' }}{% endif %}" data-id="{{ row.id }}">
+  {% if selectable %}<label class="product__select" aria-label="Select {{ row.name }}"><input type="checkbox" name="ids" value="{{ row.id }}" /></label>{% endif %}
+  <a class="product__media" href="/products/{{ row.id }}" aria-label="Open {{ row.name }}">
+    {% if row.image_url %}
+      <img src="{{ row.image_url }}" alt="" loading="lazy" />
+    {% else %}
+      <span class="product__media-fallback" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="9" cy="9" r="1.6"/></svg>
+      </span>
+    {% endif %}
+    <span class="stock-dot {{ 'is-in' if row.in_stock else 'is-out' }}" title="{{ 'In stock' if row.in_stock else 'Out of stock' }}"></span>
+  </a>
+
+  <div class="product__info">
+    <h3 class="product__name"><a href="/products/{{ row.id }}">{{ row.name }}</a></h3>
+    <div class="product__meta">
+      {% if row.model_number %}<span class="product__model">{{ row.model_number }}</span>{% endif %}
+      {% if row.store_count %}<span class="product__stores">{{ row.store_count }} store{{ 's' if row.store_count != 1 }}</span>{% endif %}
+      {% if row.is_favorite %}<span class="product__fav" title="Favorite">★</span>{% endif %}
+      {{ import_chip(row) }}
+    </div>
+    {% if price_focus %}
+    <div class="product__sched">
+      <span title="Check frequency">⟳ {{ row.schedule }}</span>
+      {% if row.target_display %}
+        {% if row.to_target_pct is not none and row.to_target_pct <= 0 %}
+          <span class="target target--hit">✓ At/under target {{ row.target_display }}</span>
+        {% else %}
+          <span class="target">Target {{ row.target_display }}{% if row.to_target_pct is not none %} · {{ '%.0f'|format(row.to_target_pct) }}% to go{% endif %}</span>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if row.tags %}
+    <div class="product__tags">
+      {% for t in row.tags %}<span class="tag" {% if t.color %}style="--tag:{{ t.color }}"{% endif %}>{{ t.name }}</span>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="product__price">
+    <div class="price">{{ row.price_display }}</div>
+    {% if row.best_store %}<div class="price__store">at {{ row.best_store }}</div>{% endif %}
+    {{ change_badge(row) }}
+  </div>
+
+  <div class="product__stock">
+    {% if row.recently_restocked %}
+      <span class="stock-badge stock-badge--restocked">Back in stock</span>
+    {% elif row.in_stock %}
+      <span class="stock-badge stock-badge--in">In stock</span>
+    {% else %}
+      <span class="stock-badge stock-badge--out">Out of stock</span>
+    {% endif %}
+    {% if row.paused %}<span class="stock-badge stock-badge--paused">Paused</span>{% endif %}
+    {% if row.status == 'failing' %}<span class="stock-badge stock-badge--failing" title="Recent checks are failing">⚠ Failing</span>
+    {% elif row.status == 'new' %}<span class="stock-badge stock-badge--stale" title="Awaiting first successful check">Awaiting check</span>
+    {% elif row.status == 'stale' %}<span class="stock-badge stock-badge--stale" title="No recent successful check">Stale</span>{% endif %}
+  </div>
+
+  <div class="product__actions">
+    <button class="kebab" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Actions">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+    </button>
+    <div class="menu" role="menu">
+      <form method="post" action="/products/{{ row.id }}/check-now"><button type="submit" role="menuitem">Check now</button></form>
+      <form method="post" action="/products/{{ row.id }}/favorite"><button type="submit" role="menuitem">{{ 'Remove favorite' if row.is_favorite else 'Add to favorites' }}</button></form>
+      <form method="post" action="/products/{{ row.id }}/pause"><button type="submit" role="menuitem">{{ 'Resume monitoring' if row.paused else 'Pause monitoring' }}</button></form>
+      <a role="menuitem" href="/products/{{ row.id }}">Edit details</a>
+      <div class="menu__sep"></div>
+      <form method="post" action="/products/{{ row.id }}/delete" data-confirm="Delete this product and its history?">
+        <button type="submit" role="menuitem" class="is-danger">Delete</button>
+      </form>
+    </div>
+  </div>
+</article>
+{%- endmacro %}

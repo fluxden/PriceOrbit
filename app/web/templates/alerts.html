@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Alerts · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left"><h1 class="page-title">Alerts</h1></div>
+</div>
+<p class="page-sub">Configure how PriceOrbit reaches you, manage your notification destinations, and customize the alert messages.</p>
+
+<!-- Master controls -->
+<form class="form-card controls-card" method="post" action="/alerts/controls">
+  <div class="controls-row">
+    <label class="switch">
+      <input type="checkbox" name="notifications_paused" value="1" {{ 'checked' if cfg.notifications_paused_b }} />
+      <span><strong>Pause all notifications</strong><span class="field__hint">Nothing is sent while this is on (test sends still work).</span></span>
+    </label>
+  </div>
+  <div class="controls-row">
+    <label class="check"><input type="checkbox" name="quiet_enabled" value="1" {{ 'checked' if cfg.quiet_enabled_b }} /> Quiet hours</label>
+    <span class="quiet-range">from <input type="time" name="quiet_start" value="{{ cfg.quiet_start }}" /> to <input type="time" name="quiet_end" value="{{ cfg.quiet_end }}" /></span>
+    <button class="btn btn--primary btn--sm" type="submit">Save</button>
+  </div>
+</form>
+
+<!-- Email -->
+<form class="form-card" method="post" action="/alerts/email">
+  <h2 class="card-title">Email</h2>
+  <div class="field">
+    <label for="email-method">Sending method</label>
+    <select id="email-method" name="email_method">
+      <option value="smtp" {{ 'selected' if cfg.email_method == 'smtp' }}>SMTP server (works with any provider)</option>
+      <option value="api" {{ 'selected' if cfg.email_method == 'api' }}>Email provider API</option>
+    </select>
+  </div>
+
+  <div class="email-grp email-smtp">
+    <div class="detail-grid">
+      <div class="field"><label>SMTP host</label><input type="text" name="smtp_host" value="{{ cfg.smtp_host }}" placeholder="smtp.gmail.com" /></div>
+      <div class="field"><label>Port</label><input type="number" name="smtp_port" value="{{ cfg.smtp_port }}" /></div>
+      <div class="field"><label>Username</label><input type="text" name="smtp_user" value="{{ cfg.smtp_user }}" autocomplete="off" /></div>
+      <div class="field"><label>Password / app password</label><input type="password" name="smtp_password" autocomplete="new-password" placeholder="{{ '•••••• (unchanged)' if cfg.smtp_password_is_set else 'not set' }}" /></div>
+      <div class="field"><label>From address</label><input type="text" name="smtp_from" value="{{ cfg.smtp_from }}" placeholder="alerts@yourdomain.com" /></div>
+      <div class="field check-field"><label class="check"><input type="checkbox" name="smtp_use_tls" value="1" {{ 'checked' if cfg.smtp_use_tls_b }} /> Use STARTTLS</label></div>
+    </div>
+  </div>
+
+  <div class="email-grp email-api" hidden>
+    <div class="detail-grid">
+      <div class="field"><label>Provider</label>
+        <select name="email_api_provider">
+          {% for value, label in email_providers %}<option value="{{ value }}" {{ 'selected' if cfg.email_api_provider == value }}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>API key</label><input type="password" name="email_api_key" autocomplete="new-password" placeholder="{{ '•••••• (unchanged)' if cfg.email_api_key_is_set else 'not set' }}" /></div>
+      <div class="field"><label>From address</label><input type="text" name="email_api_from" value="{{ cfg.email_api_from }}" placeholder="alerts@yourdomain.com" /></div>
+      <div class="field"><label>Sending domain <span class="field__opt">(Mailgun)</span></label><input type="text" name="email_api_domain" value="{{ cfg.email_api_domain }}" placeholder="mg.yourdomain.com" /></div>
+    </div>
+  </div>
+
+  <label class="check"><input type="checkbox" name="email_html" value="1" {{ 'checked' if cfg.email_html_b }} /> Send HTML email (otherwise plain text)</label>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save email settings</button></div>
+</form>
+
+<form class="form-card test-card" method="post" action="/alerts/email/test">
+  <div class="field__inline">
+    <input type="email" name="test_to" placeholder="you@example.com" />
+    <button class="btn" type="submit">Send test email</button>
+    <span class="field__hint">Sends a sample price alert to that address using your current settings.</span>
+  </div>
+</form>
+
+<!-- Telegram -->
+<form class="form-card" method="post" action="/alerts/telegram">
+  <h2 class="card-title">Telegram</h2>
+  <p class="field__hint">Create a bot with <span class="mono">@BotFather</span>, paste its token here, then message your bot so it can find your chat id.</p>
+  <div class="field"><label>Bot token</label><input type="password" name="telegram_bot_token" autocomplete="new-password" placeholder="{{ '•••••• (unchanged)' if cfg.telegram_bot_token_is_set else 'not set' }}" /></div>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save bot token</button></div>
+</form>
+
+<div class="form-card test-card">
+  <div class="field__inline">
+    <form method="post" action="/alerts/telegram/detect"><button class="btn" type="submit">Detect my chat id</button></form>
+    <form method="post" action="/alerts/telegram/test" class="field__inline">
+      <input type="text" name="test_chat" placeholder="chat id, e.g. 123456789" />
+      <button class="btn" type="submit">Send test message</button>
+    </form>
+  </div>
+  {% if detected_chats %}
+  <div class="detected">
+    <span class="field__hint">Detected chats — copy an id into an account's destination:</span>
+    {% for c in detected_chats %}<span class="chat-pill"><strong>{{ c.id }}</strong> · {{ c.name }} <span class="muted">({{ c.type }})</span></span>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Accounts -->
+<section class="form-card">
+  <h2 class="card-title">Alert destinations</h2>
+  <p class="field__hint">These are what you pick when adding alerts to a product.</p>
+  {% if accounts %}
+  <div class="accounts-list">
+    {% for a in accounts %}
+    <div class="acct {{ 'is-off' if not a.enabled }}">
+      <div class="acct__main">
+        <span class="acct__label">{{ a.label }}</span>
+        <span class="account__channel">{{ a.channel }}</span>
+        {% if a.last_verified_at %}<span class="verified">✓ verified</span>{% else %}<span class="unverified">not yet verified</span>{% endif %}
+      </div>
+      <div class="acct__sub">
+        <span class="mono">{{ a.destination or 'no destination set' }}</span>
+        {% if a.rules %}· {{ a.rules|length }} alert rule(s){% endif %}
+        {% if a.fallback %}· fallback → {{ a.fallback.label }}{% endif %}
+      </div>
+      <div class="acct__actions">
+        <form method="post" action="/alerts/accounts/{{ a.id }}/test"><button class="btn btn--sm" type="submit">Send test</button></form>
+        <details class="acct__edit">
+          <summary class="btn btn--sm btn--ghost">Edit</summary>
+          <form method="post" action="/alerts/accounts/{{ a.id }}/edit" class="acct__editform">
+            <div class="field"><label>Label</label><input type="text" name="label" value="{{ a.label }}" /></div>
+            <div class="field"><label>Destination <span class="field__opt">({{ 'email address' if a.channel == 'email' else 'chat id' }})</span></label><input type="text" name="destination" value="{{ a.destination or '' }}" /></div>
+            <div class="field"><label>Fallback if this fails</label>
+              <select name="fallback_account_id">
+                <option value="">None</option>
+                {% for other in accounts if other.id != a.id %}<option value="{{ other.id }}" {{ 'selected' if a.fallback_account_id == other.id }}>{{ other.label }} ({{ other.channel }})</option>{% endfor %}
+              </select>
+            </div>
+            <label class="check"><input type="checkbox" name="enabled" value="1" {{ 'checked' if a.enabled }} /> Enabled</label>
+            <div class="acct__editrow">
+              <button class="btn btn--primary btn--sm" type="submit">Save</button>
+              <form method="post" action="/alerts/accounts/{{ a.id }}/delete" data-confirm="Delete this destination? Alerts using it will lose their target."><button class="btn btn--sm is-danger" type="submit">Delete</button></form>
+            </div>
+          </form>
+        </details>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="field__hint">No destinations yet. Add one below.</p>
+  {% endif %}
+
+  <form method="post" action="/alerts/accounts/add" class="acct-add">
+    <div class="detail-grid">
+      <div class="field"><label>Label</label><input type="text" name="label" placeholder="e.g. Me (Gmail)" /></div>
+      <div class="field"><label>Channel</label>
+        <select name="channel">
+          <option value="email">Email</option>
+          <option value="telegram">Telegram</option>
+        </select>
+      </div>
+      <div class="field"><label>Destination</label><input type="text" name="destination" placeholder="email address or chat id" /></div>
+      <div class="field"><label>Fallback <span class="field__opt">(optional)</span></label>
+        <select name="fallback_account_id">
+          <option value="">None</option>
+          {% for other in accounts %}<option value="{{ other.id }}">{{ other.label }} ({{ other.channel }})</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Add destination</button></div>
+  </form>
+</section>
+
+<!-- Templates -->
+<form class="form-card" method="post" action="/alerts/templates">
+  <h2 class="card-title">Message templates</h2>
+  <div class="chips">
+    <span class="field__hint">Insert a placeholder:</span>
+    {% for p in placeholders %}<button type="button" class="chip" data-token="{{ p }}">{{ '{' ~ p ~ '}' }}</button>{% endfor %}
+  </div>
+
+  <fieldset class="tpl">
+    <legend>Price alert</legend>
+    <div class="field"><label>Subject (email)</label><input class="tpl-field" type="text" name="tpl_price_subject" value="{{ cfg.tpl_price_subject }}" /></div>
+    <div class="field"><label>Message</label><textarea class="tpl-field" name="tpl_price_body" rows="2">{{ cfg.tpl_price_body }}</textarea></div>
+    <p class="tpl-example"><span class="muted">Example:</span> {{ rendered.price_subject }} — {{ rendered.price_body }}</p>
+  </fieldset>
+
+  <fieldset class="tpl">
+    <legend>In-stock alert</legend>
+    <div class="field"><label>Subject (email)</label><input class="tpl-field" type="text" name="tpl_stock_subject" value="{{ cfg.tpl_stock_subject }}" /></div>
+    <div class="field"><label>Message</label><textarea class="tpl-field" name="tpl_stock_body" rows="2">{{ cfg.tpl_stock_body }}</textarea></div>
+    <p class="tpl-example"><span class="muted">Example:</span> {{ rendered.stock_subject }} — {{ rendered.stock_body }}</p>
+  </fieldset>
+
+  <p class="field__hint">For price increases, <span class="mono">{direction}</span> becomes "increased" automatically.</p>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save templates</button></div>
+</form>
+
+<!-- Delivery log -->
+<section class="form-card">
+  <h2 class="card-title">Delivery log</h2>
+  {% if logs %}
+  <div class="alert-log">
+    {% for h in logs %}
+    <div class="logrow">
+      <span class="logrow__icon {{ 'is-ok' if h.success else 'is-bad' }}">{{ '✓' if h.success else '✕' }}</span>
+      <span class="logrow__when">{{ h.created_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="logrow__ch">{{ h.channel or '' }}</span>
+      <span class="logrow__msg">{% if h.product %}{{ h.product }} — {% endif %}{{ h.subject or h.error or '' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="field__hint">Nothing sent yet. Test sends and delivered alerts will appear here.</p>
+  {% endif %}
+</section>
+{% endblock %}

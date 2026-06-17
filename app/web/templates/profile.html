@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Profile · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left">
+    <h1 class="page-title">Your profile</h1>
+    <p class="page-sub">Signed in as <strong>{{ profile_user.username }}</strong> · {{ profile_user.role }}</p>
+  </div>
+</div>
+
+{% if profile_user.must_change_password %}
+<div class="notice notice--warn">Please choose a new password to replace the one you were given.</div>
+{% endif %}
+
+<form class="form-card stack" method="post" action="/profile/name">
+  <h2 class="card-title">Display name</h2>
+  <div class="field"><label>Display name <span class="field__opt">(optional)</span></label>
+    <input type="text" name="display_name" value="{{ profile_user.display_name or '' }}" placeholder="Shown in the top bar" />
+  </div>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save</button></div>
+</form>
+
+<form class="form-card stack" method="post" action="/profile/password">
+  <h2 class="card-title">Change password</h2>
+  <div class="field"><label>Current password</label><input type="password" name="current" autocomplete="current-password" /></div>
+  <div class="detail-grid">
+    <div class="field"><label>New password</label><input type="password" name="new" autocomplete="new-password" placeholder="At least 8 characters" /></div>
+    <div class="field"><label>Confirm new password</label><input type="password" name="confirm" autocomplete="new-password" /></div>
+  </div>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Change password</button></div>
+</form>
+
+<section class="form-card stack">
+  <h2 class="card-title">Your data</h2>
+  <p class="field__hint">Download a JSON copy of your account and the products you track, including price history.</p>
+  <div class="backup-row"><a class="btn" href="/profile/export.json">Export my data (JSON)</a></div>
+</section>
+
+<section class="form-card stack">
+  <h2 class="card-title">Delete account</h2>
+  {% if is_last_admin %}
+  <p class="field__hint">You're the only admin, so this account can't be deleted here. Promote another admin first, or have them remove it from the Users page.</p>
+  {% else %}
+  <p class="field__hint">Permanently deletes your account and every product you track (listings, price history, and alert rules). This can't be undone.</p>
+  <form method="post" action="/profile/delete" class="stack" data-confirm="Delete your account and all of your tracked products? This cannot be undone.">
+    <div class="field"><label>Confirm your password</label><input type="password" name="password" autocomplete="current-password" /></div>
+    <div class="form-actions"><button class="btn is-danger" type="submit">Delete my account</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

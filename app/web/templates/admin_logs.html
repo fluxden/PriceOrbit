@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Logs · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head__left">
+    <h1 class="page-title">Logs &amp; debug</h1>
+    <p class="page-sub">Combined web + worker output. <a href="/admin">← Back to Admin</a></p>
+  </div>
+</div>
+
+<!-- Log level -->
+<form class="form-card" method="post" action="/admin/logs/level">
+  <h2 class="card-title">Log level</h2>
+  <div class="field">
+    <label for="log_level">Minimum level to record</label>
+    <select name="log_level" id="log_level">
+      {% for lvl in level_names %}
+      <option value="{{ lvl }}" {{ 'selected' if log_level == lvl }}>{{ lvl|upper }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <p class="field__hint">Most→least severe: FATAL, ERROR, WARN, INFO, DEBUG, TRACE. Lower levels log more (DEBUG/TRACE show each scrape attempt). Applies to the web app immediately; the worker picks it up within ~5 minutes.</p>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save level</button></div>
+</form>
+
+<!-- Log output -->
+<section class="form-card">
+  <div class="chart-head">
+    <h2 class="card-title">Recent output <span class="field__opt">({{ log_count }} lines, newest first)</span></h2>
+    <div class="chart-ranges" role="group" aria-label="Lines to show">
+      <a class="rangebtn {{ 'is-active' if lines == 100 }}" href="/admin/logs?lines=100">100</a>
+      <a class="rangebtn {{ 'is-active' if lines == 300 }}" href="/admin/logs?lines=300">300</a>
+      <a class="rangebtn {{ 'is-active' if lines == 1000 }}" href="/admin/logs?lines=1000">1000</a>
+    </div>
+  </div>
+  {% if log_lines %}
+  <pre class="logbox">{% for line in log_lines %}{{ line }}
+{% endfor %}</pre>
+  {% else %}
+  <p class="field__hint">No log output yet at <span class="mono">{{ log_file }}</span>. Lines appear as the app and worker run.</p>
+  {% endif %}
+  <p class="field__hint">File: <span class="mono">{{ log_file }}</span> (rotates at ~2 MB). Container stdout is also captured by <span class="mono">docker logs</span>.</p>
+</section>
+{% endblock %}

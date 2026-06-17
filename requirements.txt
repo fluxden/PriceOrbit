@@ -1,0 +1,26 @@
+# --- Core web / app ---
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+
+# --- Database ---
+SQLAlchemy>=2.0,<2.1
+PyMySQL>=1.1,<2.0
+cryptography>=42.0          # required for MySQL 8 caching_sha2_password auth
+alembic>=1.13,<2.0
+
+# --- Config / templating ---
+pydantic>=2.6,<3.0
+pydantic-settings>=2.2,<3.0
+Jinja2>=3.1,<4.0
+python-multipart>=0.0.9
+
+# --- Scheduling ---
+APScheduler>=3.10,<4.0
+pytz>=2024.1
+
+# --- HTTP (used by the scraping pipeline) ---
+httpx>=0.27,<1.0
+# Browser-impersonating HTTP client (real TLS/JA3 + HTTP2 fingerprint). Small,
+# no browser binary; gets past fingerprint-based anti-bot that blocks httpx.
+curl_cffi>=0.7,<1.0
+beautifulsoup4>=4.12,<5.0
