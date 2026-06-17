@@ -303,6 +303,86 @@
   });
 })();
 
+/* ---- Time pickers honoring the app's 12/24-hour setting ----
+   Native <input type="time"> renders in the browser locale (ignoring the
+   Settings choice) and its spinner loops endlessly. Replace each one with
+   plain <select> dropdowns: hours 01–12 + AM/PM in 12h mode, or hours 00–23
+   in 24h mode; minutes 00–59. A hidden input keeps the original name and an
+   "HH:MM" (24-hour) value so the server side is unchanged. */
+(function () {
+  var fmt = (document.body && document.body.dataset.timeFormat) === "12" ? "12" : "24";
+  var inputs = document.querySelectorAll('input[type="time"]');
+  if (!inputs.length) return;
+
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function opt(value, label, selected) {
+    var o = document.createElement("option");
+    o.value = String(value); o.textContent = label;
+    if (selected) o.selected = true;
+    return o;
+  }
+
+  Array.prototype.forEach.call(inputs, function (inp) {
+    var parts = (inp.value || "").split(":");
+    var h = parseInt(parts[0], 10); if (isNaN(h)) h = 0;
+    var m = parseInt(parts[1], 10); if (isNaN(m)) m = 0;
+
+    var wrap = document.createElement("span");
+    wrap.className = "timepick";
+
+    var hidden = document.createElement("input");
+    hidden.type = "hidden";
+    hidden.name = inp.name;
+    hidden.value = pad(h) + ":" + pad(m);
+
+    var hourSel = document.createElement("select");
+    hourSel.className = "timepick__h";
+    hourSel.setAttribute("aria-label", "Hour");
+    var minSel = document.createElement("select");
+    minSel.className = "timepick__m";
+    minSel.setAttribute("aria-label", "Minute");
+    var ampmSel = null;
+
+    var hh;
+    if (fmt === "12") {
+      var displayH = (h % 12) || 12;
+      for (hh = 1; hh <= 12; hh++) hourSel.appendChild(opt(hh, pad(hh), hh === displayH));
+      ampmSel = document.createElement("select");
+      ampmSel.className = "timepick__ampm";
+      ampmSel.setAttribute("aria-label", "AM or PM");
+      ampmSel.appendChild(opt("AM", "AM", h < 12));
+      ampmSel.appendChild(opt("PM", "PM", h >= 12));
+    } else {
+      for (hh = 0; hh <= 23; hh++) hourSel.appendChild(opt(hh, pad(hh), hh === h));
+    }
+    for (var mm = 0; mm <= 59; mm++) minSel.appendChild(opt(mm, pad(mm), mm === m));
+
+    function sync() {
+      var H, M = parseInt(minSel.value, 10);
+      if (fmt === "12") {
+        H = parseInt(hourSel.value, 10) % 12;
+        if (ampmSel.value === "PM") H += 12;
+      } else {
+        H = parseInt(hourSel.value, 10);
+      }
+      hidden.value = pad(H) + ":" + pad(M);
+    }
+    hourSel.addEventListener("change", sync);
+    minSel.addEventListener("change", sync);
+    if (ampmSel) ampmSel.addEventListener("change", sync);
+
+    var sep = document.createElement("span");
+    sep.className = "timepick__sep"; sep.textContent = ":";
+    wrap.appendChild(hidden);
+    wrap.appendChild(hourSel);
+    wrap.appendChild(sep);
+    wrap.appendChild(minSel);
+    if (ampmSel) wrap.appendChild(ampmSel);
+
+    inp.parentNode.replaceChild(wrap, inp);
+  });
+})();
+
 /* ---- Bulk actions on Price Tracking (6d) ---- */
 (function () {
   var form = document.getElementById("bulk-form");

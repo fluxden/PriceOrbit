@@ -433,6 +433,13 @@ button { font-family: inherit; cursor: pointer; }
 .form-card input:focus, .form-card select:focus, .form-card textarea:focus {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak);
 }
+/* Custom time picker (JS-built from <input type="time">): inline hour/minute
+   (+ AM/PM) dropdowns. Override the full-width `.form-card select` rule so the
+   selects size to their content and sit on one row. */
+.timepick { display: inline-flex; align-items: center; gap: 6px; }
+.form-card .timepick select { width: auto; padding: 8px 10px; }
+.timepick__sep { color: var(--text-muted); }
+
 /* The native time/date picker indicator is a dark glyph — invert it in dark mode
    so the clickable clock stays visible against the dark field background. */
 [data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,

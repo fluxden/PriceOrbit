@@ -23,7 +23,7 @@
     })();
   </script>
 </head>
-<body>
+<body data-time-format="{{ time_format | default('24') }}">
 {% macro nav_icon(key) -%}
 {% if key == 'home' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9"/></svg>
 {% elif key == 'price' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 17l5-5 4 3 8-8"/><path d="M16 7h5v5"/></svg>
