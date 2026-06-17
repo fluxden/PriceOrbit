@@ -92,10 +92,45 @@
   <form method="post" action="/settings/theme/reset"><button class="btn btn--sm btn--ghost is-danger" type="submit">Reset to default theme</button></form>
 </section>
 
-<!-- Scraping API (scrape.do) — only when a token is configured -->
+<!-- Scraping API (scrape.do) configuration -->
+<form class="form-card" method="post" action="/settings/scrapedo">
+  <h2 class="card-title">Scraping API (scrape.do)</h2>
+  <p class="field__hint">Paid fallback for anti-bot stores (Home Depot, etc.). Tried only as a last resort, after the built-in free engines are blocked — so credits are spent only on hard retailers. Create a free token at <a href="https://scrape.do" target="_blank" rel="noopener">scrape.do</a> (no card required).</p>
+
+  <div class="controls-row">
+    <label class="switch">
+      <input type="checkbox" name="scrapedo_enabled" value="1" {{ 'checked' if cfg.scrapedo_enabled_b }} />
+      <span><strong>Enable scrape.do</strong><span class="field__hint">When on and a token is saved, it's used as a last-resort engine for blocked stores.</span></span>
+    </label>
+  </div>
+
+  <div class="detail-grid">
+    <div class="field"><label>API token</label>
+      <input type="password" name="scrapedo_token" autocomplete="off" placeholder="{{ '•••••• (unchanged)' if cfg.scrapedo_token_is_set else 'not set' }}" />
+    </div>
+    <div class="field"><label>Proxy country <span class="field__opt">(geoCode)</span></label>
+      <input type="text" name="scrapedo_geo" value="{{ cfg.scrapedo_geo }}" placeholder="US" maxlength="2" autocomplete="off" />
+    </div>
+    <div class="field"><label>Request timeout <span class="field__opt">(seconds)</span></label>
+      <input type="number" name="scrapedo_timeout_seconds" value="{{ cfg.scrapedo_timeout_seconds }}" min="1" step="1" />
+    </div>
+    <div class="field"><label>Monthly credits <span class="field__opt">(for the meter)</span></label>
+      <input type="number" name="scrapedo_monthly_credits" value="{{ cfg.scrapedo_monthly_credits }}" min="0" step="1" />
+    </div>
+  </div>
+
+  <div class="stack">
+    <label class="check"><input type="checkbox" name="scrapedo_render" value="1" {{ 'checked' if cfg.scrapedo_render_b }} /> Render JavaScript <span class="field__opt">(headless browser)</span></label>
+    <label class="check"><input type="checkbox" name="scrapedo_super" value="1" {{ 'checked' if cfg.scrapedo_super_b }} /> Residential / mobile proxies <span class="field__opt">(needed for Akamai; costs more credits)</span></label>
+  </div>
+  <p class="field__hint">Residential + render fetches cost ~25 credits each; the free tier is 1,000/mo. Set monthly credits to match your plan so the usage meter below is accurate.</p>
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save scraping API</button></div>
+</form>
+
+<!-- scrape.do usage — only when a token is configured -->
 {% if scrapedo %}
 <section class="form-card">
-  <h2 class="card-title">Scraping API (scrape.do)</h2>
+  <h2 class="card-title">scrape.do usage{% if not scrapedo.active %} <span class="field__opt">(engine disabled)</span>{% endif %}</h2>
   <div class="status-grid">
     <div class="stat"><span class="stat__k">Credits used</span><span class="stat__v">{{ '{:,}'.format(scrapedo.used) if scrapedo.used is not none else '—' }}{% if scrapedo.limit %} / {{ '{:,}'.format(scrapedo.limit) }}{% endif %}</span></div>
     <div class="stat"><span class="stat__k">Credits left</span><span class="stat__v {{ 'stat__v--bad' if scrapedo.remaining is not none and scrapedo.remaining < 50 else '' }}">{{ '{:,}'.format(scrapedo.remaining) if scrapedo.remaining is not none else '—' }}</span></div>

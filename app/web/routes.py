@@ -1397,7 +1397,7 @@ def admin_page(request: Request, db: Session = Depends(get_db),
         "cfg": cfg,
         "status": _system_status(db),
         "admin_exists": auth.admin_exists(db),
-        "login_locked": settings_store.login_type_override(),
+        "login_locked": settings_store.login_type_override(db),
         "current_user": auth.current_user(request, db),
         "flash_msg": msg, "flash_error": error,
     })
@@ -1518,6 +1518,39 @@ def save_general(db: Session = Depends(get_db), timezone: str = Form("UTC"),
         "default_currency": default_currency,
     })
     return RedirectResponse("/settings?msg=General+settings+saved", status_code=303)
+
+
+@router.post("/settings/scrapedo")
+def save_scrapedo(db: Session = Depends(get_db),
+                  scrapedo_enabled: str | None = Form(None),
+                  scrapedo_token: str = Form(""),
+                  scrapedo_render: str | None = Form(None),
+                  scrapedo_super: str | None = Form(None),
+                  scrapedo_geo: str = Form(""),
+                  scrapedo_timeout_seconds: str = Form(""),
+                  scrapedo_monthly_credits: str = Form("")):
+    try:
+        timeout = float(scrapedo_timeout_seconds)
+        if timeout <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        timeout = settings.scrapedo_timeout_seconds
+    try:
+        credits = int(scrapedo_monthly_credits)
+        if credits < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        credits = settings.scrapedo_monthly_credits
+    settings_store.set_values(db, {
+        "scrapedo_enabled": "1" if scrapedo_enabled else "0",
+        "scrapedo_token": scrapedo_token.strip(),  # secret; blank keeps the saved one
+        "scrapedo_render": "1" if scrapedo_render else "0",
+        "scrapedo_super": "1" if scrapedo_super else "0",
+        "scrapedo_geo": scrapedo_geo.strip().upper(),
+        "scrapedo_timeout_seconds": str(timeout),
+        "scrapedo_monthly_credits": str(credits),
+    })
+    return RedirectResponse("/settings?msg=Scraping+API+settings+saved", status_code=303)
 
 
 @router.post("/settings/theme")

@@ -72,7 +72,10 @@ class Settings(BaseSettings):
     # OIDC can never lock you out: set LOGIN_TYPE=OFF (or Standard) in the
     # environment and redeploy to get back in. Leave empty to use the Admin UI
     # settings. Case-insensitive.
-    #   OFF      → no sign-in required
+    #   OFF      → no sign-in required — BUT only while no admin account exists.
+    #              Once an admin is created, OFF is upgraded to Standard so auth
+    #              can't be bypassed by setting the env var. It still disables a
+    #              broken OIDC (falls back to local login), which is the recovery.
     #   Standard → local username/password only (OIDC disabled)
     #   OIDC     → OIDC enabled (local login kept enabled as a fallback)
     login_type: str = ""

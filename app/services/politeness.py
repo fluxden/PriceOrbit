@@ -97,15 +97,45 @@ def _curl_cffi_available() -> bool:
     return importlib.util.find_spec("curl_cffi") is not None
 
 
+def _scrapedo_conf() -> dict:
+    """Effective scrape.do config: DB-backed (Settings page) over env defaults.
+
+    Read fresh per fetch so toggling the engine on the Settings page takes effect
+    without a restart. Falls back to env if the DB is unavailable.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.services import settings_store
+
+        db = SessionLocal()
+        try:
+            return settings_store.scrapedo_settings(db)
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001 - env fallback keeps fetches working
+        token = settings.scrapedo_token
+        return {
+            "token": token, "enabled": bool(token), "active": bool(token),
+            "render": settings.scrapedo_render, "super": settings.scrapedo_super,
+            "geo": settings.scrapedo_geo, "timeout": settings.scrapedo_timeout_seconds,
+            "monthly_credits": settings.scrapedo_monthly_credits,
+        }
+
+
+def scrapedo_active() -> bool:
+    """Whether the paid scrape.do engine is configured and enabled."""
+    return _scrapedo_conf()["active"]
+
+
 # Engines tried, in order. "impersonate" (curl_cffi) sends a real browser
 # TLS/HTTP2 fingerprint and clears most fingerprint-based anti-bot; plain
 # "httpx" is the fallback (and handles the occasional site that rejects the
-# impersonated fingerprint). "scrapedo" (paid API) is appended last when a token
-# is configured, so it only runs — and only costs credits — when the free
+# impersonated fingerprint). "scrapedo" (paid API) is appended last when it's
+# configured + enabled, so it only runs — and only costs credits — when the free
 # engines are blocked (e.g. Akamai-protected stores).
 def engine_order() -> list[str]:
     free = ["impersonate", "httpx"] if _curl_cffi_available() else ["httpx"]
-    return free + ["scrapedo"] if settings.scrapedo_token else free
+    return free + ["scrapedo"] if scrapedo_active() else free
 
 
 class FetchResult:
@@ -138,27 +168,28 @@ def http_get(url: str, *, engine: str = "httpx", timeout: float | None = None) -
 
 def _scrapedo_get(url: str, timeout: float | None) -> FetchResult:
     """Fetch via the scrape.do API (residential proxies + headless render)."""
-    params = {"token": settings.scrapedo_token, "url": url}
-    if settings.scrapedo_render:
+    conf = _scrapedo_conf()
+    params = {"token": conf["token"], "url": url}
+    if conf["render"]:
         params["render"] = "true"
-    if settings.scrapedo_super:
+    if conf["super"]:
         params["super"] = "true"
-    if settings.scrapedo_geo:
-        params["geoCode"] = settings.scrapedo_geo
+    if conf["geo"]:
+        params["geoCode"] = conf["geo"]
     resp = httpx.get(
         "https://api.scrape.do/",
         params=params,  # httpx URL-encodes the target url value
-        timeout=settings.scrapedo_timeout_seconds if timeout is None else timeout,
+        timeout=conf["timeout"] if timeout is None else timeout,
         follow_redirects=True,
     )
     if resp.status_code < 400:  # scrape.do charges only for fulfilled requests
-        _record_scrapedo_usage(_scrapedo_cost())
+        _record_scrapedo_usage(_scrapedo_cost(conf))
     return FetchResult(resp.status_code, resp.text)
 
 
-def _scrapedo_cost() -> int:
+def _scrapedo_cost(conf: dict) -> int:
     """Estimated credits for one scrape.do call given the configured mode."""
-    r, s = settings.scrapedo_render, settings.scrapedo_super
+    r, s = conf["render"], conf["super"]
     if r and s:
         return 25          # residential + render
     if s:
@@ -214,7 +245,7 @@ _usage_cache: tuple[float, dict] | None = None
 _USAGE_TTL = 60.0
 
 
-def _scrapedo_info_api() -> dict:
+def _scrapedo_info_api(token: str) -> dict:
     """Live /info lookup (cached). Free-tier tokens report zeros here."""
     global _usage_cache
     now = time.monotonic()
@@ -223,7 +254,7 @@ def _scrapedo_info_api() -> dict:
     data: dict = {}
     try:
         resp = httpx.get("https://api.scrape.do/info",
-                         params={"token": settings.scrapedo_token}, timeout=10.0)
+                         params={"token": token}, timeout=10.0)
         if resp.status_code == 200:
             data = resp.json() or {}
     except Exception:  # noqa: BLE001 - best-effort
@@ -255,17 +286,21 @@ def _scrapedo_tracked() -> tuple[int, int]:
 def scrapedo_usage() -> dict | None:
     """Usage summary for the Settings page, or None when no token is configured.
 
-    Prefers scrape.do's /info numbers when the account reports them (paid plans);
-    otherwise falls back to locally-tracked, estimated usage (free tier, whose
-    credits the API does not expose).
+    Shown whenever a token is saved (even if the engine is toggled off) so the
+    credit meter stays visible. Prefers scrape.do's /info numbers when the account
+    reports them (paid plans); otherwise falls back to locally-tracked, estimated
+    usage (free tier, whose credits the API does not expose).
     """
-    if not settings.scrapedo_token:
+    conf = _scrapedo_conf()
+    if not conf["token"]:
         return None
-    api = _scrapedo_info_api()
+    api = _scrapedo_info_api(conf["token"])
     max_monthly = api.get("MaxMonthlyRequest") or 0
     out = {
         "ok": True,
-        "active": bool(api.get("IsActive")),
+        "active": conf["active"],
+        "enabled": conf["enabled"],
+        "account_active": bool(api.get("IsActive")),
         "concurrent": api.get("ConcurrentRequest") or None,
         "remaining_concurrent": api.get("RemainingConcurrentRequest"),
     }
@@ -279,7 +314,7 @@ def scrapedo_usage() -> dict | None:
         })
     else:  # free tier — use local estimate
         used, reqs = _scrapedo_tracked()
-        limit = settings.scrapedo_monthly_credits or 0
+        limit = conf["monthly_credits"] or 0
         out.update({
             "source": "local", "limit": limit, "used": used, "requests": reqs,
             "remaining": max(limit - used, 0) if limit else None,
