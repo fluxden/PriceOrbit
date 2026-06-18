@@ -1,4 +1,48 @@
-# Shell scripts must use LF; CRLF breaks the `#!/usr/bin/env bash` shebang
-# inside Linux containers (env: 'bash\r': No such file or directory).
-*.sh text eol=lf
+# Normalize all text files to LF in the repo AND in the working tree. PriceOrbit
+# is developed on Windows but built/run in Linux containers, so CRLF that leaks
+# in breaks shebangs, here-docs, and config parsers at runtime. eol=lf keeps the
+# checkout LF on every platform so what runs in the container matches the repo.
+* text=auto eol=lf
+
+# Files that are fatal with CRLF in a Linux container (kept explicit as a guard
+# even though the rule above already covers them):
+#   env: 'bash\r': No such file or directory  ← CRLF on a #!/usr/bin/env shebang
+*.sh            text eol=lf
 docker/entrypoint.sh text eol=lf
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+.dockerignore   text eol=lf
+*.py            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.ini           text eol=lf
+*.cfg           text eol=lf
+*.toml          text eol=lf
+*.mako          text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.js            text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+*.env           text eol=lf
+.env.example    text eol=lf
+requirements*.txt text eol=lf
+
+# Binary assets: never touch line endings (CRLF "fixing" corrupts them).
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.otf  binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary
+*.sqlite  binary
+*.sqlite3 binary
+*.db   binary

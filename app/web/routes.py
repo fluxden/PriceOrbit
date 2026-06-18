@@ -13,6 +13,7 @@ import secrets
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
@@ -32,7 +33,7 @@ from app.models import (
     Tag,
     User,
 )
-from app.services import alerting, audit, auth, checker, health, notify, oidc, politeness, schedule, settings_store
+from app.services import alerting, audit, auth, checker, health, notify, oidc, politeness, schedule, settings_store, timefmt
 from app.services.importer import ProductMetadata, import_from_url
 from app.services.overview import build_rows, format_clock, format_price, schedule_display
 from app.services.product_detail import (
@@ -44,9 +45,46 @@ from app.services.product_detail import (
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-# `{{ some_time | clock(time_format) }}` — render an "HH:MM" string or datetime
-# in the user's configured 12/24-hour format.
-templates.env.filters["clock"] = format_clock
+
+
+@pass_context
+def _clock_filter(ctx, value, time_format: str = "24") -> str:
+    """`{{ some_time | clock(time_format) }}` — "HH:MM" / "h:MM AM/PM".
+
+    Stored datetimes are naive UTC, so convert them to the configured timezone
+    before reading the hour. Plain "HH:MM" schedule strings pass through as-is.
+    """
+    if isinstance(value, datetime):
+        value = timefmt.to_zone(value, timefmt.resolve_tz(ctx.get("timezone")))
+    return format_clock(value, time_format)
+
+
+@pass_context
+def _localdt_filter(ctx, value, fmt: str = "%b %d, %Y %H:%M") -> str:
+    """`{{ some_datetime | localdt('%b %d, %H:%M') }}` — strftime a stored UTC
+    datetime in the configured timezone with an explicit format. Used for the
+    compact, deliberately year-less status labels."""
+    if not value:
+        return ""
+    local = timefmt.to_zone(value, timefmt.resolve_tz(ctx.get("timezone")))
+    return local.strftime(fmt) if local else ""
+
+
+@pass_context
+def _localdate_filter(ctx, value) -> str:
+    """`{{ some_datetime | localdate }}` — the date part of a stored UTC datetime
+    in the configured timezone, formatted with the Settings "Date format"."""
+    if not value:
+        return ""
+    local = timefmt.to_zone(value, timefmt.resolve_tz(ctx.get("timezone")))
+    if local is None:
+        return ""
+    return local.strftime(ctx.get("date_format") or "%b %d, %Y")
+
+
+templates.env.filters["clock"] = _clock_filter
+templates.env.filters["localdt"] = _localdt_filter
+templates.env.filters["localdate"] = _localdate_filter
 router = APIRouter()
 
 PAGE_SIZE = 24
@@ -85,6 +123,7 @@ NAV_ITEMS = [
 
 def _base_context(request: Request, active: str) -> dict:
     theme_style, theme_base, cur_user, login_on, time_format = "", "", None, False, "24"
+    tz_name, date_format = "UTC", "%b %d, %Y"
     try:
         from app.database import SessionLocal
         _db = SessionLocal()
@@ -94,6 +133,8 @@ def _base_context(request: Request, active: str) -> dict:
             theme_base = _cfg.get("theme_base", "") or ""
             login_on = _cfg.get("login_enabled", "0") == "1"
             time_format = _cfg.get("time_format", "24") or "24"
+            tz_name = _cfg.get("timezone", "UTC") or "UTC"
+            date_format = _cfg.get("date_format", "%b %d, %Y") or "%b %d, %Y"
             cur_user = auth.current_user(request, _db)
         finally:
             _db.close()
@@ -107,7 +148,8 @@ def _base_context(request: Request, active: str) -> dict:
         nav = NAV_ITEMS + [("profile", "Profile", "/profile")]
     return {"request": request, "app_name": settings.app_name, "active": active,
             "nav_items": nav, "theme_style": theme_style, "theme_base": theme_base,
-            "current_user": cur_user, "login_enabled": login_on, "time_format": time_format}
+            "current_user": cur_user, "login_enabled": login_on, "time_format": time_format,
+            "timezone": tz_name, "date_format": date_format}
 
 
 def _sorted(rows: list, sort: str) -> list:
@@ -660,6 +702,7 @@ def _alerts_context(request: Request, db: Session, *, detected_chats=None,
     public = settings_store.get_public(db)
     accounts = db.execute(select(AlertAccount).order_by(AlertAccount.id)).scalars().all()
     sample = settings_store.sample_context()
+    sample["datetime"] = alerting.format_now(public)  # match real-send tz + date/time format
     rendered = {
         "price_subject": settings_store.render_template(public.get("tpl_price_subject", ""), sample),
         "price_body": settings_store.render_template(public.get("tpl_price_body", ""), sample),
@@ -1665,7 +1708,7 @@ def product_detail(product_id: int, request: Request, db: Session = Depends(get_
         return templates.TemplateResponse(request, "_placeholder.html", ctx)
     ctx = _base_context(request, "price")
     tf = ctx.get("time_format", "24")
-    detail = build_detail(db, p, time_format=tf)
+    detail = build_detail(db, p, time_format=tf, tz_name=ctx.get("timezone", "UTC"))
     ctx.update({
         "detail": detail,
         "frequency_choices": FREQUENCY_CHOICES,
