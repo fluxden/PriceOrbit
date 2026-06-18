@@ -104,7 +104,7 @@ button { font-family: inherit; cursor: pointer; }
   display: flex; flex-direction: column; padding: 18px 14px;
 }
 .brand { display: flex; align-items: center; gap: 11px; padding: 6px 8px; }
-.brand__mark { width: 32px; height: 30px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(69, 112, 214, 0.35)); }
+.brand__mark { width: 32px; height: 30px; object-fit: contain; }
 .brand__name { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
 .brand__orbit {
   height: 1px; margin: 14px 8px 16px;
@@ -417,6 +417,7 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
   padding: 22px 24px; max-width: 720px; display: flex; flex-direction: column; gap: 20px;
 }
+.form-card--wide { max-width: none; }
 .field { display: flex; flex-direction: column; gap: 7px; }
 .field > label { font-weight: 600; font-size: .9rem; }
 .field__opt { color: var(--text-muted); font-weight: 400; }
@@ -611,11 +612,28 @@ button { font-family: inherit; cursor: pointer; }
 
 /* Admin → Logs output */
 .logbox {
-  max-height: 460px; overflow: auto; margin: 10px 0 6px;
+  max-height: 620px; overflow: auto; margin: 10px 0 6px;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
   padding: 12px 14px; font-family: var(--mono); font-size: .78rem; line-height: 1.5;
-  white-space: pre-wrap; word-break: break-word; color: var(--text);
+  color: var(--text);
 }
+.logline { white-space: pre-wrap; word-break: break-word; }
+.logline[data-level="FATAL"] { color: var(--bad); font-weight: 650; }
+.logline[data-level="ERROR"] { color: var(--bad); }
+.logline[data-level="WARN"] { color: var(--warn); }
+.logline[data-level="DEBUG"], .logline[data-level="TRACE"] { color: var(--text-muted); }
+
+/* Logs filter + export toolbar */
+.logtools { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.logfilters { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.logfilters__label { font-size: .8rem; color: var(--text-muted); margin-right: 2px; }
+.logfilter {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+  font: inherit; font-size: .74rem; font-weight: 650; letter-spacing: .02em;
+  padding: 3px 11px; border-radius: 999px; cursor: pointer; transition: background .14s ease, color .14s ease;
+}
+.logfilter:hover { color: var(--text); }
+.logfilter.is-on { background: var(--accent-weak); color: var(--accent); border-color: transparent; }
 
 /* Stats strip */
 .stats-strip { display: flex; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 14px; }

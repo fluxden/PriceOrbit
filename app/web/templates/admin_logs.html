@@ -25,21 +25,88 @@
 </form>
 
 <!-- Log output -->
-<section class="form-card">
+<section class="form-card form-card--wide">
   <div class="chart-head">
-    <h2 class="card-title">Recent output <span class="field__opt">({{ log_count }} lines, newest first)</span></h2>
+    <h2 class="card-title">Recent output <span class="field__opt">(<span id="logvisible">{{ log_count }}</span> of {{ log_count }} lines, newest first)</span></h2>
     <div class="chart-ranges" role="group" aria-label="Lines to show">
       <a class="rangebtn {{ 'is-active' if lines == 100 }}" href="/admin/logs?lines=100">100</a>
       <a class="rangebtn {{ 'is-active' if lines == 300 }}" href="/admin/logs?lines=300">300</a>
       <a class="rangebtn {{ 'is-active' if lines == 1000 }}" href="/admin/logs?lines=1000">1000</a>
     </div>
   </div>
-  {% if log_lines %}
-  <pre class="logbox">{% for line in log_lines %}{{ line }}
-{% endfor %}</pre>
+  {% if log_entries %}
+  <div class="logtools">
+    <div class="logfilters" role="group" aria-label="Filter by level">
+      <span class="logfilters__label">Filter:</span>
+      {% for lvl in log_levels %}
+      <button type="button" class="logfilter is-on" data-level="{{ lvl }}" data-lvl="{{ lvl|lower }}">{{ lvl }}</button>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn" id="logexport">Export</button>
+  </div>
+  <div class="logbox" id="logbox">{% for level, line in log_entries %}<div class="logline" data-level="{{ level }}" data-lvl="{{ level|lower }}">{{ line }}</div>{% endfor %}</div>
   {% else %}
   <p class="field__hint">No log output yet at <span class="mono">{{ log_file }}</span>. Lines appear as the app and worker run.</p>
   {% endif %}
   <p class="field__hint">File: <span class="mono">{{ log_file }}</span> (rotates at ~2 MB). Container stdout is also captured by <span class="mono">docker logs</span>.</p>
 </section>
+
+<script>
+  /* Client-side level filtering + export of the filtered view. */
+  (function () {
+    var box = document.getElementById('logbox');
+    if (!box) return;
+    var filters = Array.prototype.slice.call(document.querySelectorAll('.logfilter'));
+    var lines = Array.prototype.slice.call(box.querySelectorAll('.logline'));
+    var countEl = document.getElementById('logvisible');
+
+    function activeLevels() {
+      var on = {};
+      filters.forEach(function (f) {
+        if (f.classList.contains('is-on')) on[f.getAttribute('data-level')] = true;
+      });
+      return on;
+    }
+
+    function apply() {
+      var on = activeLevels();
+      var shown = 0;
+      lines.forEach(function (el) {
+        var vis = !!on[el.getAttribute('data-level')];
+        el.style.display = vis ? '' : 'none';
+        if (vis) shown++;
+      });
+      if (countEl) countEl.textContent = shown;
+    }
+
+    filters.forEach(function (f) {
+      f.addEventListener('click', function () {
+        f.classList.toggle('is-on');
+        apply();
+      });
+    });
+
+    var exportBtn = document.getElementById('logexport');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function () {
+        var text = lines
+          .filter(function (el) { return el.style.display !== 'none'; })
+          .map(function (el) { return el.textContent; })
+          .join('\n');
+        var blob = new Blob([text], { type: 'text/plain' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        var ts = new Date().toISOString().replace('T', '_').replace(/:/g, '-').slice(0, 19);
+        a.href = url;
+        a.download = 'priceorbit-logs-' + ts + '.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    apply();
+  })();
+</script>
 {% endblock %}

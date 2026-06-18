@@ -13,7 +13,7 @@
 <section class="form-card">
   <h2 class="card-title">Tools</h2>
   <div class="backup-row">
-    <a class="btn" href="/admin/logs">Logs &amp; debug</a>
+    <a class="btn" href="/admin/logs">Logs</a>
     <a class="btn" href="/users">Manage users</a>
   </div>
 </section>
@@ -76,7 +76,7 @@ DB_PASSWORD=your-password</pre>
       <div class="field"><label>Subtext</label><input type="text" name="subtext" value="{{ cfg.login_subtext }}" placeholder="Sign in to continue." /></div>
     </div>
     <div class="detail-grid">
-      <div class="field"><label>Logo image <span class="field__opt">(PNG/SVG, ≤2 MB)</span></label>
+      <div class="field"><label>Logo image <span class="field__opt">(PNG/SVG, ≤10 MB)</span></label>
         <input type="file" name="logo" accept="image/*" />
         {% if cfg.login_logo %}<label class="check"><input type="checkbox" name="remove_logo" value="1" /> Remove current logo</label>{% endif %}
       </div>
