@@ -117,7 +117,15 @@ def _image_url(value) -> str | None:
 
 
 def _iter_jsonld_products(data):
-    """Yield schema.org Product dicts from arbitrarily nested JSON-LD."""
+    """Yield schema.org Product (and ProductGroup) dicts from nested JSON-LD.
+
+    Descends into ``@graph`` and into ``ProductGroup.hasVariant`` so stores that
+    model a configurable product as a group of variant Products (e.g. Bambu Lab,
+    many modern Shopify/Hydrogen storefronts) still expose price/availability via
+    a variant. The ProductGroup is yielded before its variants so its cleaner
+    group-level name wins, while the first variant supplies the price/stock; the
+    variant order is preserved so the page's default (first) variant is used.
+    """
     stack = [data]
     while stack:
         node = stack.pop()
@@ -126,9 +134,13 @@ def _iter_jsonld_products(data):
         elif isinstance(node, dict):
             if "@graph" in node:
                 stack.extend(node["@graph"] if isinstance(node["@graph"], list) else [node["@graph"]])
+            variants = node.get("hasVariant")
+            if variants:
+                # reversed: LIFO pop then restores document order (first variant first)
+                stack.extend(reversed(variants) if isinstance(variants, list) else [variants])
             t = node.get("@type")
             types = t if isinstance(t, list) else [t]
-            if any(isinstance(x, str) and x.lower() == "product" for x in types):
+            if any(isinstance(x, str) and x.lower() in ("product", "productgroup") for x in types):
                 yield node
 
 
