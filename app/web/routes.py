@@ -121,6 +121,37 @@ NAV_ITEMS = [
 ]
 
 
+def _bubble_initials(user) -> str:
+    """One- or two-letter initials for the user bubble."""
+    src = (getattr(user, "display_name", None) or user.username or "").strip()
+    parts = src.split()
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    return src[:2].upper()
+
+
+def _contrast_text(hex_color: str) -> str:
+    """Pick black/white text for a solid bubble background by luminance."""
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except (ValueError, IndexError):
+        return "#fff"
+    return "#111" if (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 else "#fff"
+
+
+def _bubble_style(user) -> str:
+    """Inline style for the bubble; empty string keeps the default chip look."""
+    color = (getattr(user, "bubble_color", None) or "").strip()
+    if not color:
+        return ""
+    if getattr(user, "bubble_transparent", False):
+        return f"background:transparent;border-color:{color};color:{color};"
+    return f"background:{color};border-color:{color};color:{_contrast_text(color)};"
+
+
 def _base_context(request: Request, active: str) -> dict:
     theme_style, theme_base, cur_user, login_on, time_format = "", "", None, False, "24"
     tz_name, date_format = "UTC", "%b %d, %Y"
@@ -140,16 +171,17 @@ def _base_context(request: Request, active: str) -> dict:
             _db.close()
     except Exception:  # noqa: BLE001 — cosmetic/auth context must never block a page
         pass
+    # Profile is reached from the user bubble menu, not the sidebar. Non-admins
+    # only see the monitoring pages.
     nav = NAV_ITEMS
     if login_on and cur_user is not None and cur_user.role != "admin":
         nav = [item for item in NAV_ITEMS if item[0] in ("home", "price", "stock")]
-        nav = nav + [("profile", "Profile", "/profile")]
-    elif login_on and cur_user is not None:
-        nav = NAV_ITEMS + [("profile", "Profile", "/profile")]
+    bubble = {"style": _bubble_style(cur_user), "initials": _bubble_initials(cur_user)} \
+        if cur_user is not None else {"style": "", "initials": ""}
     return {"request": request, "app_name": settings.app_name, "active": active,
             "nav_items": nav, "theme_style": theme_style, "theme_base": theme_base,
             "current_user": cur_user, "login_enabled": login_on, "time_format": time_format,
-            "timezone": tz_name, "date_format": date_format}
+            "timezone": tz_name, "date_format": date_format, "bubble": bubble}
 
 
 def _sorted(rows: list, sort: str) -> list:
@@ -1243,14 +1275,53 @@ def profile_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse(request, "profile.html", ctx)
 
 
-@router.post("/profile/name")
-def profile_name(request: Request, db: Session = Depends(get_db), display_name: str = Form("")):
+@router.post("/profile/account")
+def profile_account(request: Request, db: Session = Depends(get_db), username: str = Form(""),
+                    display_name: str = Form(""), email: str = Form("")):
     cur = auth.current_user(request, db)
     if cur is None:
         return RedirectResponse("/", status_code=303)
+    username = username.strip()
+    email = email.strip()
+    if len(username) < 3:
+        return RedirectResponse("/profile?error=Username+must+be+at+least+3+characters", status_code=303)
+    if email and "@" not in email:
+        return RedirectResponse("/profile?error=Enter+a+valid+email+address", status_code=303)
+    if username != cur.username:
+        existing = auth.get_user_by_username(db, username)
+        if existing is not None and existing.id != cur.id:
+            return RedirectResponse("/profile?error=That+username+is+taken", status_code=303)
+        cur.username = username
     cur.display_name = display_name.strip() or None
+    cur.email = email or None
     db.commit()
+    _audit(request, db, "profile.updated", detail=cur.username)
     return RedirectResponse("/profile?msg=Profile+saved", status_code=303)
+
+
+@router.post("/profile/appearance")
+def profile_appearance(request: Request, db: Session = Depends(get_db),
+                       bubble_color: str = Form(""), bubble_transparent: str = Form(""),
+                       bubble_display: str = Form("name"), remove_avatar: str = Form(""),
+                       avatar: UploadFile = File(None)):
+    cur = auth.current_user(request, db)
+    if cur is None:
+        return RedirectResponse("/", status_code=303)
+    cur.bubble_color = bubble_color.strip() or None
+    cur.bubble_transparent = bool(bubble_transparent)
+    cur.bubble_display = "initials" if bubble_display == "initials" else "name"
+    if remove_avatar:
+        cur.avatar_url = None
+    else:
+        res = _save_upload(avatar, "avatar")
+        if res == "BADTYPE":
+            return RedirectResponse("/profile?error=Avatar+must+be+an+image", status_code=303)
+        if res == "TOOBIG":
+            return RedirectResponse("/profile?error=Avatar+exceeds+2+MB", status_code=303)
+        if res:
+            cur.avatar_url = res
+    db.commit()
+    return RedirectResponse("/profile?msg=Appearance+saved", status_code=303)
 
 
 @router.post("/profile/password")

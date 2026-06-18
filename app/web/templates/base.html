@@ -76,12 +76,27 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
         </a>
         {% if current_user %}
-        <span class="userchip" title="Signed in as {{ current_user.username }}">{{ (current_user.display_name or current_user.username)[:18] }}</span>
-        <form method="post" action="/logout" style="display:inline">
-          <button class="iconbtn" type="submit" aria-label="Sign out" title="Sign out">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+        <div class="usermenu">
+          <button class="userchip usertrigger {{ 'userchip--avatar' if current_user.avatar_url }}"
+                  type="button" aria-haspopup="true" aria-expanded="false"
+                  title="Signed in as {{ current_user.username }}"
+                  {% if bubble.style %}style="{{ bubble.style }}"{% endif %}>
+            {% if current_user.avatar_url %}
+            <img class="userchip__img" src="{{ current_user.avatar_url }}" alt="" />
+            {% elif current_user.bubble_display == 'initials' %}
+            {{ bubble.initials }}
+            {% else %}
+            {{ (current_user.display_name or current_user.username)[:18] }}
+            {% endif %}
           </button>
-        </form>
+          <div class="menu" role="menu">
+            <a href="/profile" role="menuitem">Profile</a>
+            <div class="menu__sep"></div>
+            <form method="post" action="/logout">
+              <button type="submit" role="menuitem">Log out</button>
+            </form>
+          </div>
+        </div>
         {% endif %}
       </div>
     </header>

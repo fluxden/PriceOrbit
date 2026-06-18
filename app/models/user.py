@@ -24,6 +24,17 @@ class User(Base):
         Boolean, default=True, server_default=text("1"), nullable=False
     )
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # User-bubble appearance (shown in the top bar). Defaults reproduce the
+    # original chip: name text on the surface background, no custom color.
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    bubble_color: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    bubble_transparent: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0"), nullable=False
+    )
+    bubble_display: Mapped[str] = mapped_column(
+        String(16), default="name", server_default=text("'name'"), nullable=False
+    )
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("0"), nullable=False
     )

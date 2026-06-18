@@ -46,18 +46,18 @@
     });
   });
 
-  /* ---- Row action menus (kebab) ---- */
+  /* ---- Dropdown menus (row kebab + user bubble) ---- */
   function closeAllMenus(except) {
     document.querySelectorAll(".menu.is-open").forEach(function (m) {
       if (m !== except) {
         m.classList.remove("is-open");
-        var btn = m.parentElement.querySelector(".kebab");
+        var btn = m.parentElement.querySelector(".kebab, .usertrigger");
         if (btn) btn.setAttribute("aria-expanded", "false");
       }
     });
   }
 
-  document.querySelectorAll(".kebab").forEach(function (btn) {
+  document.querySelectorAll(".kebab, .usertrigger").forEach(function (btn) {
     btn.addEventListener("click", function (e) {
       e.stopPropagation();
       var menu = btn.parentElement.querySelector(".menu");
@@ -380,6 +380,95 @@
     if (ampmSel) wrap.appendChild(ampmSel);
 
     inp.parentNode.replaceChild(wrap, inp);
+  });
+})();
+
+/* ---- Profile: live preview of the user bubble ---- */
+(function () {
+  var form = document.getElementById("bubble-form");
+  var preview = document.getElementById("bubble-preview");
+  if (!form || !preview) return;
+
+  var hex = document.getElementById("bubble-hex");
+  var swatch = document.getElementById("bubble-swatch");
+  var transparent = document.getElementById("bubble-transparent");
+  var avatar = form.querySelector('input[name="avatar"]');
+  var removeAvatar = form.querySelector('input[name="remove_avatar"]');
+
+  function nameSource() {
+    var dn = document.querySelector('input[name="display_name"]');
+    var un = document.querySelector('input[name="username"]');
+    return ((dn && dn.value.trim()) || (un && un.value.trim()) || "").trim();
+  }
+  function initials(src) {
+    var p = src.split(/\s+/).filter(Boolean);
+    if (p.length >= 2) return (p[0][0] + p[1][0]).toUpperCase();
+    return src.slice(0, 2).toUpperCase();
+  }
+  function contrast(c) {
+    var h = c.replace("#", "");
+    if (h.length === 3) h = h.split("").map(function (x) { return x + x; }).join("");
+    var r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return "#fff";
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#111" : "#fff";
+  }
+  function hasAvatarImg() {
+    var img = preview.querySelector(".userchip__img");
+    return img && (!removeAvatar || !removeAvatar.checked);
+  }
+  function render() {
+    // Color / fill
+    var c = hex ? hex.value.trim() : "";
+    preview.style.cssText = "";
+    if (c) {
+      if (transparent && transparent.checked) {
+        preview.style.background = "transparent";
+        preview.style.borderColor = c;
+        preview.style.color = c;
+      } else {
+        preview.style.background = c;
+        preview.style.borderColor = c;
+        preview.style.color = contrast(c);
+      }
+    }
+    // Content
+    if (hasAvatarImg()) {
+      preview.classList.add("userchip--avatar");
+      return;
+    }
+    preview.classList.remove("userchip--avatar");
+    var disp = form.querySelector('input[name="bubble_display"]:checked');
+    var src = nameSource();
+    preview.textContent = (disp && disp.value === "initials") ? initials(src) : src.slice(0, 18);
+  }
+
+  if (hex) hex.addEventListener("input", function () {
+    var v = hex.value.trim();
+    if (swatch && /^#?[0-9a-fA-F]{6}$/.test(v)) swatch.value = v[0] === "#" ? v : "#" + v;
+    render();
+  });
+  if (swatch) swatch.addEventListener("input", function () { if (hex) hex.value = swatch.value; render(); });
+  if (transparent) transparent.addEventListener("change", render);
+  if (removeAvatar) removeAvatar.addEventListener("change", function () {
+    if (removeAvatar.checked) {
+      var img = preview.querySelector(".userchip__img");
+      if (img) img.remove();
+    }
+    render();
+  });
+  if (avatar) avatar.addEventListener("change", function () {
+    var f = avatar.files && avatar.files[0];
+    if (!f) return;
+    var url = URL.createObjectURL(f);
+    var img = preview.querySelector(".userchip__img");
+    if (!img) { img = document.createElement("img"); img.className = "userchip__img"; img.alt = ""; preview.innerHTML = ""; preview.appendChild(img); }
+    img.src = url;
+    if (removeAvatar) removeAvatar.checked = false;
+    render();
+  });
+  form.querySelectorAll('input[name="bubble_display"]').forEach(function (r) { r.addEventListener("change", render); });
+  document.querySelectorAll('input[name="display_name"], input[name="username"]').forEach(function (i) {
+    i.addEventListener("input", render);
   });
 })();
 
