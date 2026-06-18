@@ -143,13 +143,24 @@ def _contrast_text(hex_color: str) -> str:
 
 
 def _bubble_style(user) -> str:
-    """Inline style for the bubble; empty string keeps the default chip look."""
+    """Inline style for a standalone bubble (profile preview); empty = default."""
     color = (getattr(user, "bubble_color", None) or "").strip()
     if not color:
         return ""
     if getattr(user, "bubble_transparent", False):
         return f"background:transparent;border-color:{color};color:{color};"
     return f"background:{color};border-color:{color};color:{_contrast_text(color)};"
+
+
+def _bubble_vars(user) -> str:
+    """CSS custom properties for the whole top-bar action group, so the theme +
+    notification icon buttons share the user's bubble color. Empty = default."""
+    color = (getattr(user, "bubble_color", None) or "").strip()
+    if not color:
+        return ""
+    if getattr(user, "bubble_transparent", False):
+        return f"--bubble-bg:transparent;--bubble-border:{color};--bubble-fg:{color};"
+    return f"--bubble-bg:{color};--bubble-border:{color};--bubble-fg:{_contrast_text(color)};"
 
 
 def _base_context(request: Request, active: str) -> dict:
@@ -176,8 +187,9 @@ def _base_context(request: Request, active: str) -> dict:
     nav = NAV_ITEMS
     if login_on and cur_user is not None and cur_user.role != "admin":
         nav = [item for item in NAV_ITEMS if item[0] in ("home", "price", "stock")]
-    bubble = {"style": _bubble_style(cur_user), "initials": _bubble_initials(cur_user)} \
-        if cur_user is not None else {"style": "", "initials": ""}
+    bubble = {"style": _bubble_style(cur_user), "vars": _bubble_vars(cur_user),
+              "initials": _bubble_initials(cur_user)} \
+        if cur_user is not None else {"style": "", "vars": "", "initials": ""}
     return {"request": request, "app_name": settings.app_name, "active": active,
             "nav_items": nav, "theme_style": theme_style, "theme_base": theme_base,
             "current_user": cur_user, "login_enabled": login_on, "time_format": time_format,
