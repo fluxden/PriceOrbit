@@ -54,7 +54,10 @@ class Settings(BaseSettings):
     # anti-bot-protected stores (e.g. Akamai/Home Depot). Disabled when the token
     # is empty. Get a token at https://scrape.do (free tier available).
     scrapedo_token: str = ""
-    scrapedo_render: bool = True       # run JS in a headless browser
+    # Allow escalating to a headless JS render. scrape.do is tried no-render first
+    # (cheaper, and enough for anti-bot stores whose static HTML carries the price,
+    # e.g. Best Buy); render is used only when that no-render fetch finds no price.
+    scrapedo_render: bool = True
     scrapedo_super: bool = True        # residential/mobile proxies (needed for Akamai)
     scrapedo_geo: str = "US"           # geoCode; blank to let scrape.do choose
     scrapedo_timeout_seconds: float = 70.0  # render + residential is slow

@@ -37,6 +37,7 @@ from app.services.politeness import (
     engine_order,
     http_get,
     scrapedo_active,
+    scrapedo_render_enabled,
 )
 
 log = logging.getLogger("importer")
@@ -673,24 +674,52 @@ def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
     blocked: int | None = None
     http_err: int | None = None
     last_exc: Exception | None = None
-    for engine in engine_order():
-        log.debug("import %s via %s", url, engine)
+
+    def _fetch(engine: str, render: bool | None = None):
+        """Run one engine and classify the response. Returns a usable FetchResult
+        or None, recording the failure reason (block / http error / exception) so
+        the final message can explain what happened."""
+        nonlocal blocked, http_err, last_exc
+        label = engine + (" +render" if render else "")
         try:
-            resp = http_get(url, engine=engine)
+            resp = http_get(url, engine=engine, render=render)
         except Exception as exc:  # noqa: BLE001 - try the next engine, then report
-            log.debug("engine %s failed for %s: %s", engine, dom, exc)
+            log.debug("engine %s failed for %s: %s", label, dom, exc)
             last_exc = exc
-            continue
+            return None
         log.log(TRACE, "engine %s -> HTTP %s (%d bytes) for %s",
-                engine, resp.status_code, len(resp.text or ""), dom)
+                label, resp.status_code, len(resp.text or ""), dom)
         if resp.status_code in _BLOCK_STATUS:
             blocked = resp.status_code
-            continue
+            return None
         if resp.status_code >= 400:
             http_err = http_err or resp.status_code
-            continue
-        meta = extract_metadata(resp.text, url)
-        if meta.ok:
+            return None
+        return resp
+
+    def _scrapedo_meta():
+        """scrape.do no-render first, escalating to a headless render only when the
+        cheap fetch found no price (a genuinely JS-rendered store). Falls back to a
+        name-only result if neither attempt yields a price."""
+        best = None
+        for render in ([None, True] if scrapedo_render_enabled() else [None]):
+            resp = _fetch("scrapedo", render=render)
+            if resp is None:
+                continue
+            m = extract_metadata(resp.text, url)
+            if m.ok and m.price is not None:
+                return m
+            if m.ok and best is None:
+                best = m
+        return best
+
+    for engine in engine_order():
+        if engine == "scrapedo":
+            meta = _scrapedo_meta()
+        else:
+            resp = _fetch(engine)
+            meta = extract_metadata(resp.text, url) if resp is not None else None
+        if meta is not None and meta.ok:
             log.debug("import ok via %s: %r price=%s %s", engine, meta.name, meta.price, meta.currency)
             return meta  # has at least a name; good enough to add + monitor
 

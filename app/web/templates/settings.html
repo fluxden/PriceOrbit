@@ -120,10 +120,10 @@
   </div>
 
   <div class="stack">
-    <label class="check"><input type="checkbox" name="scrapedo_render" value="1" {{ 'checked' if cfg.scrapedo_render_b }} /> Render JavaScript <span class="field__opt">(headless browser)</span></label>
+    <label class="check"><input type="checkbox" name="scrapedo_render" value="1" {{ 'checked' if cfg.scrapedo_render_b }} /> Render JavaScript when needed <span class="field__opt">(headless browser, fallback only)</span></label>
     <label class="check"><input type="checkbox" name="scrapedo_super" value="1" {{ 'checked' if cfg.scrapedo_super_b }} /> Residential / mobile proxies <span class="field__opt">(needed for Akamai; costs more credits)</span></label>
   </div>
-  <p class="field__hint">Residential + render fetches cost ~25 credits each; the free tier is 1,000/mo. Set monthly credits to match your plan so the usage meter below is accurate.</p>
+  <p class="field__hint">scrape.do is tried without render first (~10 credits); render is only added when the no-render fetch finds no price, costing ~25. The free tier is 1,000/mo — set monthly credits to match your plan so the usage meter below is accurate.</p>
   <div class="form-actions"><button class="btn btn--primary" type="submit">Save scraping API</button></div>
 </form>
 
