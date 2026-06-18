@@ -25,7 +25,7 @@ from app.models import (
 )
 from app.services.overview import _INTERVAL_LABELS, format_clock, format_price
 from app.config import settings
-from app.services import health
+from app.services import health, timefmt
 
 # A small, theme-friendly palette for chart lines (cycles if more stores).
 SERIES_COLORS = ["#2f6df0", "#0ea5e9", "#0e9f6e", "#7c5cff", "#e5774d", "#14b8a6"]
@@ -68,6 +68,7 @@ class ProductDetail:
     stores: list[dict] = field(default_factory=list)
     series: list[dict] = field(default_factory=list)
     oos_spans: list[list[str]] = field(default_factory=list)
+    tz: str = "UTC"
     stats: dict = field(default_factory=dict)
     best_store: str | None = None
     target_price: Decimal | None = None
@@ -79,9 +80,10 @@ class ProductDetail:
     health: dict = field(default_factory=dict)
 
 
-def build_detail(db: Session, product: Product, time_format: str = "24") -> ProductDetail:
+def build_detail(db: Session, product: Product, time_format: str = "24",
+                 tz_name: str = "UTC") -> ProductDetail:
     urls = sorted(product.urls, key=lambda u: (not u.is_primary, u.id))
-    detail = ProductDetail(product=product)
+    detail = ProductDetail(product=product, tz=timefmt.tz_name(tz_name))
 
     # Display currency = primary store's, else the most common across listings.
     currencies = [u.currency for u in urls if u.currency]
@@ -99,7 +101,7 @@ def build_detail(db: Session, product: Product, time_format: str = "24") -> Prod
     for i, u in enumerate(urls):
         points = sorted(u.price_history, key=lambda h: h.checked_at)
         series_points = [
-            {"t": h.checked_at.isoformat(), "p": float(h.price), "s": bool(h.in_stock)}
+            {"t": timefmt.utc_iso(h.checked_at), "p": float(h.price), "s": bool(h.in_stock)}
             for h in points if h.price is not None
         ]
         if (not detail.mixed_currency) or (u.currency == detail.currency):
@@ -214,10 +216,10 @@ def _oos_spans(points: list[PriceHistory]) -> list[list[str]]:
         if not h.in_stock and start is None:
             start = h.checked_at
         elif h.in_stock and start is not None:
-            spans.append([start.isoformat(), h.checked_at.isoformat()])
+            spans.append([timefmt.utc_iso(start), timefmt.utc_iso(h.checked_at)])
             start = None
     if start is not None and points:
-        spans.append([start.isoformat(), points[-1].checked_at.isoformat()])
+        spans.append([timefmt.utc_iso(start), timefmt.utc_iso(points[-1].checked_at)])
     return spans
 
 

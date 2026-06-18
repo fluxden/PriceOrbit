@@ -194,7 +194,7 @@
     {% for h in logs %}
     <div class="logrow">
       <span class="logrow__icon {{ 'is-ok' if h.success else 'is-bad' }}">{{ '✓' if h.success else '✕' }}</span>
-      <span class="logrow__when">{{ h.created_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="logrow__when">{{ h.created_at | localdate }} {{ h.created_at | clock(time_format) }}</span>
       <span class="logrow__ch">{{ h.channel or '' }}</span>
       <span class="logrow__msg">{% if h.product %}{{ h.product }} — {% endif %}{{ h.subject or h.error or '' }}</span>
     </div>

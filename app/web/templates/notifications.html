@@ -33,7 +33,7 @@
     {% for e in entries %}
     <div class="notifrow">
       <span class="notifrow__outcome notifrow__outcome--{{ e.outcome }}">{{ {'sent': 'Sent', 'failed': 'Failed', 'suppressed': 'Muted'}[e.outcome] }}</span>
-      <span class="notifrow__when">{{ e.created_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="notifrow__when">{{ e.created_at | localdate }} {{ e.created_at | clock(time_format) }}</span>
       <span class="notifrow__ch">{{ e.channel or '—' }}</span>
       <a class="notifrow__product" href="/products/{{ e.product_id }}">{{ e.product }}</a>
       <span class="notifrow__msg">{{ e.subject or e.message or '' }}{% if e.outcome != 'sent' and e.error %}<span class="notifrow__err"> — {{ e.error }}</span>{% endif %}</span>

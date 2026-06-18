@@ -301,6 +301,7 @@ class SiteAdapter:
     domains: tuple = ()
     detect: object = None  # optional callable(soup) -> bool
     name_sel: tuple = ()
+    image_sel: tuple = ()
     price_sel: tuple = ()
     price_attr: str | None = None
     currency_sel: tuple = ()
@@ -355,8 +356,70 @@ def _sel_present(soup, selectors) -> bool:
     return any(_select_one(soup, sel) for sel in selectors)
 
 
+def _img_from_dynamic(value: str) -> str | None:
+    """Amazon ``data-a-dynamic-image`` is a JSON map of ``url -> [w, h]``; pick the
+    highest-resolution URL."""
+    try:
+        mapping = json.loads(value)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    if not isinstance(mapping, dict) or not mapping:
+        return None
+
+    def _area(item):
+        dims = item[1]
+        if isinstance(dims, list) and len(dims) == 2:
+            try:
+                return int(dims[0]) * int(dims[1])
+            except (TypeError, ValueError):
+                return 0
+        return 0
+
+    return max(mapping.items(), key=_area)[0]
+
+
+def _img_from_srcset(value: str) -> str | None:
+    """First URL from a ``srcset`` / ``data-srcset`` candidate list."""
+    first = value.split(",")[0].strip()
+    return first.split()[0] if first else None
+
+
+# Attribute precedence when reading an <img>/<meta>/<link>: full-res hi-res first,
+# then lazy-load data-* attrs, then the plain src/href/content.
+_IMG_ATTRS = ("data-old-hires", "src", "data-src", "data-image", "content", "href")
+
+
+def _element_image(el) -> str | None:
+    """Best image URL from a single element across the common attribute carriers."""
+    if el is None:
+        return None
+    dyn = el.get("data-a-dynamic-image")
+    if dyn:
+        url = _img_from_dynamic(dyn)
+        if url:
+            return url
+    for attr in _IMG_ATTRS:
+        v = el.get(attr)
+        if v and v.strip() and not v.strip().startswith("data:"):
+            return v.strip()
+    srcset = el.get("srcset") or el.get("data-srcset")
+    if srcset:
+        return _img_from_srcset(srcset)
+    return None
+
+
+def _sel_image(soup, selectors) -> str | None:
+    for sel in selectors:
+        url = _element_image(_select_one(soup, sel))
+        if url:
+            return url
+    return None
+
+
 def _apply_adapter(adapter: SiteAdapter, soup: BeautifulSoup, meta: ProductMetadata) -> None:
     meta.name = meta.name or _sel_text(soup, adapter.name_sel)
+    if not meta.image_url and adapter.image_sel:
+        meta.image_url = _sel_image(soup, adapter.image_sel)
     if meta.price is None:
         price, cur = _sel_price(soup, adapter.price_sel, adapter.price_attr)
         if price is not None:
@@ -393,6 +456,10 @@ ADAPTERS = [
         name="Amazon",
         domains=("amazon.",),
         name_sel=("#productTitle", "h1#title"),
+        # Main gallery image. data-old-hires / data-a-dynamic-image carry the
+        # full-res URL(s); plain src is a low-res / sprite fallback.
+        image_sel=("#landingImage", "#imgBlkFront", "#ebooksImgBlkFront",
+                   "#main-image", "#imgTagWrapperId img"),
         # Buy-box ids first so we don't grab a struck-through list price; the
         # full price text lives in the screen-reader span ".a-offscreen".
         price_sel=(
@@ -405,6 +472,19 @@ ADAPTERS = [
         ),
         in_stock_sel=("#add-to-cart-button", "#buy-now-button"),
         out_stock_sel=("#outOfStock", "#availability .a-color-state"),
+    ),
+    SiteAdapter(
+        name="Best Buy",
+        domains=("bestbuy.com", "bestbuy.ca"),
+        name_sel=("h1.heading-5", ".sku-title h1", "h1[data-testid='product-title']"),
+        image_sel=("img.primary-image", ".primary-image img", ".primary-image",
+                   ".shop-media-gallery img", "img[data-testid='product-image']"),
+        price_sel=(".priceView-hero-price span[aria-hidden='true']",
+                   ".priceView-customer-price span[aria-hidden='true']",
+                   ".priceView-hero-price span", ".priceView-customer-price span"),
+        in_stock_sel=("button.add-to-cart-button:not([disabled])",),
+        out_stock_sel=("button.add-to-cart-button[disabled]",
+                       ".fulfillment-add-to-cart-button button[disabled]"),
     ),
     SiteAdapter(
         name="WooCommerce",
@@ -439,6 +519,11 @@ ADAPTERS = [
 _GENERIC_PRICE_SEL = (
     "meta[itemprop='price']", "[itemprop='price']", "[data-price]", "[data-product-price]",
     ".product-price", ".current-price", ".sale-price", ".price", "#price", ".price-tag",
+)
+_GENERIC_IMAGE_SEL = (
+    "link[rel='image_src']", "[itemprop='image']", "#main-image img", ".product-image img",
+    ".product__image img", ".product-media img", ".product-gallery img",
+    ".product-single__photo img", "figure.product img", ".gallery img",
 )
 _BUY_TOKENS = ("add to cart", "add to bag", "add to basket", "add to trolley", "buy now")
 _OOS_TOKENS = ("sold out", "out of stock", "notify me", "email when available",
@@ -506,6 +591,8 @@ def _from_selectors(soup: BeautifulSoup, meta: ProductMetadata) -> None:
                 if meta.currency is None and isinstance(raw, str):
                     meta.currency = currency_from_text(raw)
                 break
+    if not meta.image_url:
+        meta.image_url = _sel_image(soup, _GENERIC_IMAGE_SEL)
     if meta.in_stock is None:
         meta.in_stock = _text_stock(soup)
 

@@ -11,7 +11,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from app.models import AlertAccount, AlertChannel, AlertRule, AlertType, NotificationLog
-from app.services import alerts_engine, notify, settings_store
+from app.services import alerts_engine, notify, settings_store, timefmt
+from app.services.overview import format_clock
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -33,7 +34,18 @@ def _money(value, currency) -> str:
     return f"{sym}{value:,.2f}" if sym else f"{value:,.2f} {currency or ''}".strip()
 
 
-def _format_context(ctx: dict, now: datetime) -> dict:
+def format_now(cfg: dict, now: datetime | None = None) -> str:
+    """The ``{datetime}`` placeholder value: a naive-UTC instant rendered in the
+    configured timezone with the Settings date format + 12/24-hour preference.
+    Shared by real sends and the Alerts-page template preview so they match."""
+    now = now or datetime.utcnow()
+    local = timefmt.to_zone(now, timefmt.resolve_tz(cfg.get("timezone", "UTC")))
+    date_fmt = cfg.get("date_format") or "%b %d, %Y"
+    return f"{local.strftime(date_fmt)} {format_clock(local, cfg.get('time_format', '24'))}"
+
+
+def _format_context(ctx: dict, now: datetime, cfg: dict | None = None) -> dict:
+    cfg = cfg or {}
     cur = ctx.get("currency")
     out = dict(ctx)
     out["current_price"] = _money(ctx.get("current_price"), cur)
@@ -42,7 +54,7 @@ def _format_context(ctx: dict, now: datetime) -> dict:
     out["target_price"] = _money(ctx.get("target_price"), cur)
     pc = ctx.get("percent_change")
     out["percent_change"] = f"{pc:.1f}%" if pc is not None else ""
-    out["datetime"] = now.strftime("%b %d, %Y %H:%M")
+    out["datetime"] = format_now(cfg, now)
     return {k: ("" if v is None else v) for k, v in out.items()}
 
 
@@ -50,7 +62,7 @@ def _render(cfg: dict, decision, now: datetime) -> tuple[str, str]:
     is_stock = decision.type == AlertType.BACK_IN_STOCK
     subj_key = "tpl_stock_subject" if is_stock else "tpl_price_subject"
     body_key = "tpl_stock_body" if is_stock else "tpl_price_body"
-    fmt = _format_context(decision.context, now)
+    fmt = _format_context(decision.context, now, cfg)
     subject = settings_store.render_template(cfg.get(subj_key, ""), fmt)
     body = settings_store.render_template(cfg.get(body_key, ""), fmt)
     return subject, body

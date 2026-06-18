@@ -45,12 +45,12 @@
       <div class="pb__health pb__health--{{ detail.health.status }}">
         <span class="pb__health-dot" aria-hidden="true"></span>
         {% if detail.health.status == 'failing' %}Checks failing — {{ detail.health.consecutive_failures }} in a row{% if detail.health.last_error %} · {{ detail.health.last_error }}{% endif %}
-        {% elif detail.health.status == 'stale' %}No successful check recently{% if detail.health.last_checked %} · last {{ detail.health.last_checked.strftime('%b %d') }}, {{ detail.health.last_checked | clock(time_format) }}{% endif %}
+        {% elif detail.health.status == 'stale' %}No successful check recently{% if detail.health.last_checked %} · last {{ detail.health.last_checked | localdt('%b %d') }}, {{ detail.health.last_checked | clock(time_format) }}{% endif %}
         {% elif detail.health.status == 'new' %}Awaiting first check
         {% elif detail.health.status == 'paused' %}Monitoring paused
         {% elif detail.health.status == 'off' %}Monitoring off
-        {% else %}Monitoring healthy{% if detail.health.last_checked %} · last checked {{ detail.health.last_checked.strftime('%b %d') }}, {{ detail.health.last_checked | clock(time_format) }}{% endif %}{% endif %}
-        {% if detail.health.next_run and detail.health.status not in ['paused', 'off'] %}<span class="pb__health-next">· next ~{{ detail.health.next_run.strftime('%b %d') }}, {{ detail.health.next_run | clock(time_format) }}</span>{% endif %}
+        {% else %}Monitoring healthy{% if detail.health.last_checked %} · last checked {{ detail.health.last_checked | localdt('%b %d') }}, {{ detail.health.last_checked | clock(time_format) }}{% endif %}{% endif %}
+        {% if detail.health.next_run and detail.health.status not in ['paused', 'off'] %}<span class="pb__health-next">· next ~{{ detail.health.next_run | localdt('%b %d') }}, {{ detail.health.next_run | clock(time_format) }}</span>{% endif %}
       </div>
       {% if detail.product.description %}<p class="pb__desc">{{ detail.product.description }}</p>{% endif %}
     </div>
@@ -105,7 +105,7 @@
     {% endfor %}
   </div>
   <div id="price-chart" class="chart-host"></div>
-  <script type="application/json" id="chart-data">{{ {"series": detail.series, "oosSpans": detail.oos_spans, "target": detail.target_value, "currency": detail.currency} | tojson }}</script>
+  <script type="application/json" id="chart-data">{{ {"series": detail.series, "oosSpans": detail.oos_spans, "target": detail.target_value, "currency": detail.currency, "tz": detail.tz} | tojson }}</script>
   <div class="stats-strip">
     <div class="stat"><span class="stat__k">Current</span><span class="stat__v">{{ detail.stats.current or '—' }}</span></div>
     <div class="stat"><span class="stat__k">Lowest</span><span class="stat__v stat__v--good">{{ detail.stats.low or '—' }}</span></div>
@@ -132,7 +132,7 @@
           <span class="store__price">{{ s.last_price_display }}</span>
           <span class="stock-dot {{ 'is-in' if s.last_in_stock else 'is-out' }}"></span>
           <span class="store__sched">⟳ {{ s.schedule_label }}</span>
-          {% if s.last_checked_at %}<span class="store__checked">· checked {{ s.last_checked_at.strftime('%b %d') }}</span>{% endif %}
+          {% if s.last_checked_at %}<span class="store__checked">· checked {{ s.last_checked_at | localdt('%b %d') }}</span>{% endif %}
           {% if s.consecutive_failures %}<span class="store__failing" title="{{ s.last_error or 'Recent checks failed' }}">⚠ {{ s.consecutive_failures }} failed</span>{% endif %}
           {% if not s.active %}<span class="store__paused">paused</span>{% endif %}
         </div>
@@ -259,7 +259,7 @@
     {% for h in detail.history %}
     <div class="logrow">
       <span class="logrow__icon {{ 'is-ok' if h.success else 'is-bad' }}">{{ '✓' if h.success else '✕' }}</span>
-      <span class="logrow__when">{{ h.created_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="logrow__when">{{ h.created_at | localdate }} {{ h.created_at | clock(time_format) }}</span>
       <span class="logrow__ch">{{ h.channel or '' }}</span>
       <span class="logrow__msg">{{ h.subject or h.error or '' }}</span>
     </div>

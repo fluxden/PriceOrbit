@@ -16,8 +16,14 @@
   const fmt = v => sym ? sym + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                        : (cur ? cur + ' ' : '') + v.toFixed(2);
   const DAY = 864e5;
-  const fmtDate = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const fmtTime = ms => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  // Point times carry an explicit UTC offset, so Date.parse fixes the instant;
+  // we render every label in the app-configured timezone (data.tz) rather than
+  // the viewer's browser timezone. Invalid/blank tz falls back to browser local.
+  const TZ = data.tz || undefined;
+  const dtOpts = o => { const x = Object.assign({}, o); if (TZ) x.timeZone = TZ; return x; };
+  const fmtDate = ms => new Date(ms).toLocaleDateString(undefined, dtOpts({ month: 'short', day: 'numeric' }));
+  const fmtTime = ms => new Date(ms).toLocaleTimeString(undefined, dtOpts({ hour: 'numeric', minute: '2-digit' }));
+  const dayKeyOf = ms => new Date(ms).toLocaleDateString('en-CA', dtOpts({}));  // tz-aware YYYY-MM-DD
 
   // Pick black or white text for a colored background by its sRGB luminance.
   function textOn(color) {
@@ -124,7 +130,7 @@
       const anchor = i === 0 ? 'start' : (i === tTicks ? 'end' : 'middle');
       if (intraday) {
         svg += `<text x="${xx}" y="${H - 18}" class="chart-axis chart-axis--x" style="text-anchor:${anchor}">${fmtTime(tv)}</text>`;
-        const dayKey = new Date(tv).toDateString();
+        const dayKey = dayKeyOf(tv);
         if (dayKey !== lastDay) {
           svg += `<text x="${xx}" y="${H - 5}" class="chart-axis chart-axis--date" style="text-anchor:${anchor}">${fmtDate(tv)}</text>`;
           lastDay = dayKey;

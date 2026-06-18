@@ -18,7 +18,7 @@
         <span class="acct__chan acct__chan--{{ 'email' if u.role == 'admin' else 'telegram' }}">{{ u.role }}</span>
         <span class="acct__label">{{ u.display_name or u.username }}</span>
         <span class="acct__dest">@{{ u.username }}</span>
-        {% if u.last_login_at %}<span class="field__hint">last in {{ u.last_login_at.strftime('%b %d, %H:%M') }}</span>{% endif %}
+        {% if u.last_login_at %}<span class="field__hint">last in {{ u.last_login_at | localdate }} {{ u.last_login_at | clock(time_format) }}</span>{% endif %}
         {% if not u.is_active %}<span class="acct__off">disabled</span>{% endif %}
       </div>
       <div class="acct__actions">
@@ -70,7 +70,7 @@
   <div class="audit-list">
     {% for e in audit_events %}
     <div class="audit-row">
-      <span class="audit-when mono">{{ e.created_at.strftime('%b %d, %H:%M') }}</span>
+      <span class="audit-when mono">{{ e.created_at | localdate }} {{ e.created_at | clock(time_format) }}</span>
       <span class="audit-action">{{ audit_labels.get(e.action, e.action) }}</span>
       <span class="audit-actor">{{ e.actor }}</span>
       {% if e.detail %}<span class="audit-detail">{{ e.detail }}</span>{% endif %}
