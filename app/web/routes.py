@@ -983,17 +983,19 @@ def save_oidc(request: Request, db: Session = Depends(get_db),
 
 _ALLOWED_IMG = {".png", ".jpg", ".jpeg", ".webp", ".svg", ".gif"}
 _MAX_UPLOAD = 2 * 1024 * 1024
+_MAX_LOGO_UPLOAD = 10 * 1024 * 1024
 
 
-def _save_upload(file: UploadFile | None, prefix: str) -> str | None:
+def _save_upload(file: UploadFile | None, prefix: str,
+                 max_bytes: int = _MAX_UPLOAD) -> str | None:
     """Save an uploaded image; returns served path, or 'BADTYPE'/'TOOBIG', or None."""
     if file is None or not file.filename:
         return None
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in _ALLOWED_IMG:
         return "BADTYPE"
-    data = file.file.read(_MAX_UPLOAD + 1)
-    if len(data) > _MAX_UPLOAD:
+    data = file.file.read(max_bytes + 1)
+    if len(data) > max_bytes:
         return "TOOBIG"
     os.makedirs(settings.uploads_dir, exist_ok=True)
     name = f"{prefix}-{secrets.token_hex(6)}{ext}"
@@ -1011,11 +1013,11 @@ def save_login_page(db: Session = Depends(get_db), heading: str = Form(""),
     if remove_logo:
         values["login_logo"] = ""
     else:
-        res = _save_upload(logo, "login-logo")
+        res = _save_upload(logo, "login-logo", _MAX_LOGO_UPLOAD)
         if res == "BADTYPE":
             return RedirectResponse("/admin?error=Logo+must+be+an+image", status_code=303)
         if res == "TOOBIG":
-            return RedirectResponse("/admin?error=Logo+exceeds+2+MB", status_code=303)
+            return RedirectResponse("/admin?error=Logo+exceeds+10+MB", status_code=303)
         if res:
             values["login_logo"] = res
     if remove_bg:
@@ -1547,12 +1549,16 @@ def admin_logs(request: Request, db: Session = Depends(get_db),
     level = settings_store.get_config(db).get("log_level") or settings.log_level
     lines = max(50, min(lines, 2000))
     entries = logsetup.tail(settings.log_file, lines)
+    tagged = list(reversed(logsetup.classify(entries)))   # newest first
+    present = [lvl for lvl in (logsetup.UI_LEVELS + ["OTHER"])
+               if any(t[0] == lvl for t in tagged)]
     ctx = _base_context(request, "admin")
     ctx.update({
         "log_level": level,
         "level_names": logsetup.LEVEL_NAMES,
-        "log_lines": list(reversed(entries)),   # newest first
-        "log_count": len(entries),
+        "log_entries": tagged,                  # (level, text), newest first
+        "log_levels": present,                  # levels present, for filter chips
+        "log_count": len(tagged),
         "lines": lines,
         "log_file": settings.log_file,
         "current_user": auth.current_user(request, db),

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from logging.handlers import RotatingFileHandler
 
 # Custom level below DEBUG so the UI can offer "trace".
@@ -70,3 +71,35 @@ def tail(log_file: str, limit: int = 300) -> list[str]:
         return []
     except Exception:  # noqa: BLE001
         return []
+
+
+# Severity buckets exposed to the Logs UI (most→least severe). These are the
+# user-facing names; the raw lines carry Python's level names, which we map below.
+UI_LEVELS = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"]
+_LEVELNAME_TO_UI = {
+    "CRITICAL": "FATAL", "FATAL": "FATAL",
+    "ERROR": "ERROR",
+    "WARNING": "WARN", "WARN": "WARN",
+    "INFO": "INFO",
+    "DEBUG": "DEBUG",
+    "TRACE": "TRACE",
+}
+# Matches the level token right after the "<date> <time> " prefix of `_FMT`.
+_LINE_RE = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d[.,]\d+ \[([A-Z]+)\]")
+
+
+def classify(lines: list[str]) -> list[tuple[str, str]]:
+    """Tag each raw line with its UI level bucket.
+
+    Continuation lines (tracebacks, wrapped messages) carry the level of the
+    entry they belong to so a filter keeps them with their parent line. Lines
+    before any recognizable entry fall back to ``OTHER``.
+    """
+    out: list[tuple[str, str]] = []
+    last = "OTHER"
+    for line in lines:
+        m = _LINE_RE.match(line)
+        if m:
+            last = _LEVELNAME_TO_UI.get(m.group(1), "OTHER")
+        out.append((last, line))
+    return out
