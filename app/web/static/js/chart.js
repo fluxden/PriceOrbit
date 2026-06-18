@@ -174,7 +174,7 @@
     host.innerHTML = svg;
 
     bindControls();
-    bindHover(vis, x, y, tMin, tMax, intraday);
+    bindHover(vis, x, y, tMin, tMax);
   }
 
   function bindControls() {
@@ -189,7 +189,7 @@
     });
   }
 
-  function bindHover(vis, x, y, tMin, tMax, intraday) {
+  function bindHover(vis, x, y, tMin, tMax) {
     const svg = host.querySelector('svg');
     const guide = host.querySelector('#chart-guide');
     const hl = host.querySelector('#chart-hl');
@@ -213,7 +213,9 @@
         }
       });
       const gx = x(snap);
-      const stamp = intraday ? fmtDate(snap) + ' ' + fmtTime(snap) : fmtDate(snap);
+      // Always show full date + time in the hover bubble, even on multi-day
+      // ranges where the x-axis labels show date only.
+      const stamp = fmtDate(snap) + ' ' + fmtTime(snap);
       guide.setAttribute('x1', gx); guide.setAttribute('x2', gx); guide.style.display = '';
       hl.innerHTML = rings;
       tip.hidden = false;
