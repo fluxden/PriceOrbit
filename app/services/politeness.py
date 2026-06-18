@@ -148,10 +148,16 @@ class FetchResult:
         self.text = text
 
 
-def http_get(url: str, *, engine: str = "httpx", timeout: float | None = None) -> FetchResult:
-    """Single GET with the given engine and browser-like headers. No politeness."""
+def http_get(url: str, *, engine: str = "httpx", timeout: float | None = None,
+             render: bool | None = None) -> FetchResult:
+    """Single GET with the given engine and browser-like headers. No politeness.
+
+    ``render`` only applies to the scrape.do engine: ``None`` runs the cheap
+    no-render fetch (the default primary attempt), ``True`` forces a headless
+    render (the importer's escalation when no-render found no price).
+    """
     if engine == "scrapedo":
-        return _scrapedo_get(url, timeout)
+        return _scrapedo_get(url, timeout, render)
     timeout = settings.fetch_timeout_seconds if timeout is None else timeout
     if engine == "impersonate":
         from curl_cffi import requests as creq  # lazy: keep import optional
@@ -166,11 +172,28 @@ def http_get(url: str, *, engine: str = "httpx", timeout: float | None = None) -
     return FetchResult(resp.status_code, resp.text)
 
 
-def _scrapedo_get(url: str, timeout: float | None) -> FetchResult:
-    """Fetch via the scrape.do API (residential proxies + headless render)."""
+def scrapedo_render_enabled() -> bool:
+    """Whether render escalation is permitted (the Settings 'Render' toggle).
+
+    With the no-render-first strategy this no longer forces every call to render;
+    it only allows the importer to escalate to a headless render when the cheap
+    no-render fetch came back without a price (a genuinely JS-rendered store).
+    """
+    return bool(_scrapedo_conf()["render"])
+
+
+def _scrapedo_get(url: str, timeout: float | None, render: bool | None = None) -> FetchResult:
+    """Fetch via the scrape.do API (residential proxies + optional headless render).
+
+    The primary call (``render=None``) runs without render — cheaper, and enough
+    for most anti-bot retail whose static HTML still carries JSON-LD price (e.g.
+    Best Buy). The importer escalates to ``render=True`` only when that misses the
+    price; render's headless browser is both costlier and tripped by some Akamai
+    edges, so it's the fallback rather than the default.
+    """
     conf = _scrapedo_conf()
     params = {"token": conf["token"], "url": url}
-    if conf["render"]:
+    if render:
         params["render"] = "true"
     if conf["super"]:
         params["super"] = "true"
@@ -183,18 +206,17 @@ def _scrapedo_get(url: str, timeout: float | None) -> FetchResult:
         follow_redirects=True,
     )
     if resp.status_code < 400:  # scrape.do charges only for fulfilled requests
-        _record_scrapedo_usage(_scrapedo_cost(conf))
+        _record_scrapedo_usage(_scrapedo_cost(bool(render), conf["super"]))
     return FetchResult(resp.status_code, resp.text)
 
 
-def _scrapedo_cost(conf: dict) -> int:
-    """Estimated credits for one scrape.do call given the configured mode."""
-    r, s = conf["render"], conf["super"]
-    if r and s:
+def _scrapedo_cost(render: bool, sup: bool) -> int:
+    """Estimated credits for one scrape.do call given the engine mode used."""
+    if render and sup:
         return 25          # residential + render
-    if s:
+    if sup:
         return 10          # residential only
-    if r:
+    if render:
         return 5           # render only
     return 1               # basic datacenter
 
