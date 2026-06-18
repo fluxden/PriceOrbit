@@ -10,7 +10,7 @@ from urllib.parse import quote, urlencode, urlparse
 import os
 import secrets
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
@@ -1544,11 +1544,15 @@ def admin_page(request: Request, db: Session = Depends(get_db),
 
 @router.get("/admin/logs", response_class=HTMLResponse)
 def admin_logs(request: Request, db: Session = Depends(get_db),
-               lines: int = 300, msg: str | None = None, error: str | None = None):
+               lines: int = 300, files: list[str] | None = Query(default=None),
+               msg: str | None = None, error: str | None = None):
     from app import logsetup
     level = settings_store.get_config(db).get("log_level") or settings.log_level
     lines = max(50, min(lines, 2000))
-    entries = logsetup.tail(settings.log_file, lines)
+    available = logsetup.list_files(settings.log_file)      # newest→oldest
+    names = [f["name"] for f in available]
+    selected = [n for n in (files or []) if n in names] or names[:1]   # default: live file
+    entries = logsetup.read_selected(settings.log_file, selected, lines)
     tagged = list(reversed(logsetup.classify(entries)))   # newest first
     present = [lvl for lvl in (logsetup.UI_LEVELS + ["OTHER"])
                if any(t[0] == lvl for t in tagged)]
@@ -1558,6 +1562,8 @@ def admin_logs(request: Request, db: Session = Depends(get_db),
         "level_names": logsetup.LEVEL_NAMES,
         "log_entries": tagged,                  # (level, text), newest first
         "log_levels": present,                  # levels present, for filter chips
+        "log_files": available,                 # available files, for the selector
+        "selected_files": selected,
         "log_count": len(tagged),
         "lines": lines,
         "log_file": settings.log_file,

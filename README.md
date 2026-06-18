@@ -136,11 +136,13 @@ services:
     networks:
       - proxy
     volumes:
-      - uploads_data:/data/uploads
+      # Persists app state under /data: uploads (/data/uploads, auto-created)
+      # and logs (/data/app.log, rotated at 2 MB, kept 7 days).
+      - app_data:/data
 
 volumes:
   db_data:
-  uploads_data:
+  app_data:
 
 networks:
   proxy:
@@ -209,3 +211,5 @@ service to point at your server, then remove the bundled `db` service (and its
   the actual recovery). See [`ENVIRONMENT.md`](./ENVIRONMENT.md).
 - Log verbosity is set with `LOG_LEVEL` (`fatal`→`trace`) or live in **Admin →
   Logs**; both web and worker write to `LOG_FILE` (default `/data/app.log`).
+  The file rotates at 2 MB and rotated files are kept for 7 days, then deleted.
+  Persist them by keeping `/data` on a volume (the bundled compose does this).
