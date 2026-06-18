@@ -166,14 +166,22 @@ button { font-family: inherit; cursor: pointer; }
 }
 .quick-add__btn:hover { background: var(--accent-hover); }
 
+/* The user's bubble color (set inline on .topbar__actions) flows into every
+   bubble here via these vars; they fall back to the default surface look. */
 .topbar__actions { margin-left: auto; display: flex; gap: 6px; }
 .iconbtn {
   width: 38px; height: 38px; border-radius: var(--r-sm);
-  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+  border: 1px solid var(--bubble-border, var(--border));
+  background: var(--bubble-bg, var(--surface)); color: var(--bubble-fg, var(--text-muted));
   display: inline-flex; align-items: center; justify-content: center;
-  transition: background 0.14s ease, color 0.14s ease;
+  transition: background 0.14s ease, color 0.14s ease, filter 0.14s ease;
 }
-.iconbtn:hover { background: var(--surface-2); color: var(--text); }
+.iconbtn:hover {
+  background: var(--bubble-bg, var(--surface-2));
+  color: var(--bubble-fg, var(--text)); filter: brightness(0.94);
+}
+/* No custom color: keep the original plain hover. */
+.topbar__actions:not([style]) .iconbtn:hover { filter: none; background: var(--surface-2); color: var(--text); }
 .iconbtn svg { width: 18px; height: 18px; }
 .i-moon { display: none; }
 [data-theme="dark"] .i-sun { display: none; }
@@ -784,11 +792,13 @@ button { font-family: inherit; cursor: pointer; }
    ============================================================ */
 .userchip {
   display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 38px;
-  border-radius: var(--r-pill); border: 1px solid var(--border);
-  background: var(--surface); color: var(--text-muted); font-size: .82rem; font-weight: 560;
+  border-radius: var(--r-pill); border: 1px solid var(--bubble-border, var(--border));
+  background: var(--bubble-bg, var(--surface)); color: var(--bubble-fg, var(--text-muted));
+  font-size: .82rem; font-weight: 560;
 }
-button.userchip { cursor: pointer; }
-button.userchip:hover { background: var(--surface-hover); color: var(--text); }
+button.userchip { cursor: pointer; transition: background 0.14s ease, color 0.14s ease, filter 0.14s ease; }
+button.userchip:hover { filter: brightness(0.94); }
+.topbar__actions:not([style]) button.userchip:hover { filter: none; background: var(--surface-hover); color: var(--text); }
 .userchip--avatar { padding: 0; width: 38px; overflow: hidden; }
 .userchip__img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
 
