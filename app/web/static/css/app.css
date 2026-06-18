@@ -783,10 +783,23 @@ button { font-family: inherit; cursor: pointer; }
    Login page + signed-in chip (step 8b)
    ============================================================ */
 .userchip {
-  display: inline-flex; align-items: center; padding: 0 12px; height: 38px;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 38px;
   border-radius: var(--r-pill); border: 1px solid var(--border);
   background: var(--surface); color: var(--text-muted); font-size: .82rem; font-weight: 560;
 }
+button.userchip { cursor: pointer; }
+button.userchip:hover { background: var(--surface-hover); color: var(--text); }
+.userchip--avatar { padding: 0; width: 38px; overflow: hidden; }
+.userchip__img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+
+/* User bubble dropdown (top bar) — reuses the shared .menu styles. */
+.usermenu { position: relative; display: inline-flex; }
+
+/* Bubble customization on the profile page */
+.bubble-preview-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.bubble-preview-label { color: var(--text-muted); font-size: .82rem; font-weight: 560; }
+.radio { display: inline-flex; align-items: center; gap: 7px; margin-right: 16px; font-weight: 500; cursor: pointer; }
+.radio input { width: auto; }
 .login-body { min-height: 100vh; }
 .login-body[style*="--login-bg"] { background: var(--login-bg) center / cover no-repeat fixed; }
 .login { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; }

@@ -13,12 +13,63 @@
 <div class="notice notice--warn">Please choose a new password to replace the one you were given.</div>
 {% endif %}
 
-<form class="form-card stack" method="post" action="/profile/name">
-  <h2 class="card-title">Display name</h2>
+<form class="form-card stack" method="post" action="/profile/account">
+  <h2 class="card-title">Account details</h2>
+  <div class="detail-grid">
+    <div class="field"><label>Username</label>
+      <input type="text" name="username" value="{{ profile_user.username }}" minlength="3" required />
+    </div>
+    <div class="field"><label>Email <span class="field__opt">(optional)</span></label>
+      <input type="email" name="email" value="{{ profile_user.email or '' }}" placeholder="you@example.com" />
+    </div>
+  </div>
   <div class="field"><label>Display name <span class="field__opt">(optional)</span></label>
     <input type="text" name="display_name" value="{{ profile_user.display_name or '' }}" placeholder="Shown in the top bar" />
   </div>
   <div class="form-actions"><button class="btn btn--primary" type="submit">Save</button></div>
+</form>
+
+<form class="form-card stack" id="bubble-form" method="post" action="/profile/appearance" enctype="multipart/form-data">
+  <h2 class="card-title">User bubble</h2>
+  <p class="field__hint">Customize the bubble shown in the top bar. Leave the color blank for the default look.</p>
+
+  <div class="bubble-preview-row">
+    <span class="bubble-preview-label">Preview</span>
+    <span class="userchip" id="bubble-preview"
+          {% if bubble.style %}style="{{ bubble.style }}"{% endif %}>
+      {% if profile_user.avatar_url %}<img class="userchip__img" src="{{ profile_user.avatar_url }}" alt="" />
+      {% elif profile_user.bubble_display == 'initials' %}{{ bubble.initials }}
+      {% else %}{{ (profile_user.display_name or profile_user.username)[:18] }}{% endif %}
+    </span>
+  </div>
+
+  <div class="field"><label>Show</label>
+    <label class="radio"><input type="radio" name="bubble_display" value="name"
+      {{ 'checked' if profile_user.bubble_display != 'initials' }} /> Full name</label>
+    <label class="radio"><input type="radio" name="bubble_display" value="initials"
+      {{ 'checked' if profile_user.bubble_display == 'initials' }} /> Initials</label>
+  </div>
+
+  <div class="color-row">
+    <label>Bubble color</label>
+    <input type="text" class="hex" id="bubble-hex" name="bubble_color"
+           value="{{ profile_user.bubble_color or '' }}" placeholder="default" />
+    <input type="color" class="swatch" id="bubble-swatch" value="{{ profile_user.bubble_color or '#4570d6' }}" />
+  </div>
+  <div class="field">
+    <label class="radio"><input type="checkbox" id="bubble-transparent" name="bubble_transparent" value="1"
+      {{ 'checked' if profile_user.bubble_transparent }} /> Transparent fill (outline only)</label>
+  </div>
+
+  <div class="field"><label>Avatar <span class="field__opt">(optional)</span></label>
+    {% if profile_user.avatar_url %}
+    <label class="radio"><input type="checkbox" name="remove_avatar" value="1" /> Remove current avatar</label>
+    {% endif %}
+    <input type="file" name="avatar" accept="image/*" />
+    <p class="field__hint">Square images look best. Max 2 MB; it's cropped to fit the bubble.</p>
+  </div>
+
+  <div class="form-actions"><button class="btn btn--primary" type="submit">Save appearance</button></div>
 </form>
 
 <form class="form-card stack" method="post" action="/profile/password">
