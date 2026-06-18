@@ -184,7 +184,8 @@ def build_scheduler() -> BlockingScheduler:
         jobstores=jobstores, executors=executors, job_defaults=job_defaults, timezone=tz,
     )
     scheduler.add_job(heartbeat, trigger="interval", minutes=5, id="heartbeat",
-                      replace_existing=True, coalesce=True, max_instances=1)
+                      replace_existing=True, coalesce=True, max_instances=1,
+                      next_run_time=datetime.now(tz))
     scheduler.add_job(reconcile_jobs, trigger="interval",
                       minutes=settings.scheduler_reconcile_minutes, id="reconcile",
                       replace_existing=True, coalesce=True, max_instances=1,
@@ -225,9 +226,12 @@ def main() -> None:
             db.close()
     except Exception as exc:  # noqa: BLE001
         log.warning("Could not record worker start: %s", exc)
-    # Populate jobs + heartbeat right away so the status panel is accurate fast.
-    reconcile_jobs()
-    heartbeat()
+    # Do NOT reconcile before start(): while the scheduler is STOPPED, get_jobs()
+    # only sees pending jobs, not the persistent jobstore, so every product would
+    # look new and be re-added with a near-immediate next_run_time — re-checking
+    # everything on a container restart. The reconcile and heartbeat jobs are both
+    # scheduled with next_run_time=now, so they run right after start() (with the
+    # persisted jobs visible) and the status panel stays fast and accurate.
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

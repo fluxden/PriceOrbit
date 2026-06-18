@@ -171,9 +171,16 @@ def _from_jsonld(soup: BeautifulSoup, meta: ProductMetadata) -> None:
                 meta.description = str(desc)[:2000]
             offers = _first(product.get("offers"))
             if isinstance(offers, dict):
+                # Price/currency may sit directly on the Offer or in a nested
+                # priceSpecification (schema.org allows both; e.g. store.ui.com).
+                spec = _first(offers.get("priceSpecification"))
+                spec = spec if isinstance(spec, dict) else {}
                 if meta.price is None:
-                    meta.price = parse_price(offers.get("price") or offers.get("lowPrice"))
-                meta.currency = meta.currency or offers.get("priceCurrency")
+                    meta.price = parse_price(
+                        offers.get("price") or offers.get("lowPrice")
+                        or spec.get("price") or spec.get("minPrice"))
+                meta.currency = (meta.currency or offers.get("priceCurrency")
+                                 or spec.get("priceCurrency"))
                 if meta.in_stock is None:
                     meta.in_stock = _availability_to_stock(offers.get("availability"))
             if meta.name and meta.price is not None:
@@ -640,7 +647,12 @@ def extract_metadata(html: str, url: str) -> ProductMetadata:
     return meta
 
 
-_BLOCK_STATUS = (401, 403, 429, 503)
+# Statuses that mean an anti-bot / CDN edge refused us rather than the origin
+# answering. 502/504 and Cloudflare's 520-527 are gateway failures retailers like
+# Best Buy (Akamai) return to scrapers — treat them as "blocked" so we fall
+# through to the next engine (scrape.do) and surface the right guidance, not a
+# bare "HTTP 502".
+_BLOCK_STATUS = (401, 403, 429, 503, 502, 504, 520, 521, 522, 523, 524, 525, 526, 527)
 
 
 def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
