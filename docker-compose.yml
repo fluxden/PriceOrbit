@@ -49,11 +49,13 @@ services:
     networks:
       - proxy
     volumes:
-      - uploads_data:/data/uploads
+      # Persists app state: uploads (/data/uploads, auto-created) and logs
+      # (/data/app.log, rotated at 2 MB, kept 7 days).
+      - app_data:/data
 
 volumes:
   db_data:
-  uploads_data:
+  app_data:
 
 networks:
   proxy:
