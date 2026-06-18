@@ -116,6 +116,14 @@ def _image_url(value) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _model_value(value) -> str | None:
+    """schema.org ``model`` may be plain text or a nested ProductModel object."""
+    value = _first(value)
+    if isinstance(value, dict):
+        return value.get("name") or value.get("model") or value.get("value")
+    return value if isinstance(value, str) else None
+
+
 def _iter_jsonld_products(data):
     """Yield schema.org Product (and ProductGroup) dicts from nested JSON-LD.
 
@@ -156,7 +164,8 @@ def _from_jsonld(soup: BeautifulSoup, meta: ProductMetadata) -> None:
         for product in _iter_jsonld_products(data):
             meta.name = meta.name or product.get("name")
             meta.image_url = meta.image_url or _image_url(product.get("image"))
-            meta.model_number = meta.model_number or product.get("mpn") or product.get("sku")
+            meta.model_number = (meta.model_number or _model_value(product.get("model"))
+                                 or product.get("mpn") or product.get("sku"))
             desc = product.get("description")
             if desc and not meta.description:
                 meta.description = str(desc)[:2000]
@@ -269,7 +278,8 @@ def _itemprop(soup: BeautifulSoup, prop: str) -> str | None:
 def _from_microdata(soup: BeautifulSoup, meta: ProductMetadata) -> None:
     meta.name = meta.name or _itemprop(soup, "name")
     meta.image_url = meta.image_url or _itemprop(soup, "image")
-    meta.model_number = meta.model_number or _itemprop(soup, "mpn") or _itemprop(soup, "sku")
+    meta.model_number = (meta.model_number or _itemprop(soup, "model")
+                         or _itemprop(soup, "mpn") or _itemprop(soup, "sku"))
     if meta.description is None:
         desc = _itemprop(soup, "description")
         if desc:
@@ -380,6 +390,23 @@ def _detect_magento(soup):
 
 ADAPTERS = [
     SiteAdapter(
+        name="Amazon",
+        domains=("amazon.",),
+        name_sel=("#productTitle", "h1#title"),
+        # Buy-box ids first so we don't grab a struck-through list price; the
+        # full price text lives in the screen-reader span ".a-offscreen".
+        price_sel=(
+            "#corePrice_feature_div .a-price .a-offscreen",
+            "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen",
+            "#corePrice_desktop .a-price .a-offscreen",
+            "#price_inside_buybox",
+            "#priceblock_ourprice", "#priceblock_dealprice", "#priceblock_saleprice",
+            "span.a-price span.a-offscreen", ".a-price .a-offscreen",
+        ),
+        in_stock_sel=("#add-to-cart-button", "#buy-now-button"),
+        out_stock_sel=("#outOfStock", "#availability .a-color-state"),
+    ),
+    SiteAdapter(
         name="WooCommerce",
         detect=_detect_woocommerce,
         name_sel=("h1.product_title", ".product_title"),
@@ -432,6 +459,38 @@ def _text_stock(soup: BeautifulSoup) -> bool | None:
     return None
 
 
+# Matches a spec-table label cell that holds a manufacturer model number, e.g.
+# "Model", "Model #", "Model Number", "Manufacturer Part Number", "Mfr Part No".
+# Anchored so only a label-only cell matches (not a paragraph starting "Model...").
+_MODEL_LABEL_RE = re.compile(
+    r"^\s*(?:mfr\.?\s*)?(?:manufacturer\s*)?(?:model|part)"
+    r"\s*(?:#|no\.?|number|name)?\s*:?\s*$",
+    re.I,
+)
+
+
+def _from_spec_table(soup: BeautifulSoup, meta: ProductMetadata) -> None:
+    """Last-resort model number from a spec table/list (Home Depot, Best Buy, …).
+
+    Finds a label cell whose whole text is a model label and takes the adjacent
+    value element. Covers ``th/td``, ``dt/dd`` and ``div/span`` label-value pairs
+    where the model lives only in an unstructured spec section.
+    """
+    if meta.model_number:
+        return
+    for label in soup.find_all(("th", "dt", "td", "div", "span", "li")):
+        txt = label.get_text(" ", strip=True)
+        if not txt or len(txt) > 40 or not _MODEL_LABEL_RE.match(txt):
+            continue
+        sib = label.find_next_sibling()
+        if not sib:
+            continue
+        val = sib.get_text(" ", strip=True)
+        if val and val.lower() != txt.lower() and 1 < len(val) <= 120:
+            meta.model_number = val
+            return
+
+
 def _from_selectors(soup: BeautifulSoup, meta: ProductMetadata) -> None:
     """Generic, platform-agnostic last-resort price + stock."""
     if meta.price is None:
@@ -467,6 +526,7 @@ def extract_metadata(html: str, url: str) -> ProductMetadata:
             break
 
     _from_selectors(soup, meta)
+    _from_spec_table(soup, meta)
 
     if not meta.name and soup.title and soup.title.string:
         meta.name = soup.title.string.strip()[:300]
