@@ -9,7 +9,7 @@ WORKDIR /app
 # Minimal system deps. (Scraping libs that need libxml2/etc. will be added
 # alongside the scraping step so the base image stays small for now.)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps first for better layer caching
@@ -26,7 +26,10 @@ RUN sed -i 's/\r$//' /app/docker/entrypoint.sh \
     && adduser --disabled-password --gecos "" appuser \
     && mkdir -p /data/uploads /data/logs \
     && chown -R appuser:appuser /app /data
-USER appuser
+
+# NOTE: no `USER appuser` here on purpose. The entrypoint starts as root so it
+# can chown root-owned bind mounts (dockerd creates missing bind sources as
+# root), then drops to appuser via gosu. App + all written files stay uid 1000.
 
 # Entrypoint starts both the web server and the scheduler worker in one
 # container; nothing needs to be passed from docker-compose.

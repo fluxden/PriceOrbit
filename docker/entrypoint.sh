@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
+# 0) Self-heal storage permissions, then drop privileges.
+# dockerd creates missing bind-mount source dirs as root, so the non-root app
+# can't write them. When started as root, fix ownership of the persistence dirs
+# and re-exec as appuser. No-op when already running as appuser.
+if [ "$(id -u)" = "0" ]; then
+    chown appuser:appuser /data/uploads /data/logs 2>/dev/null || true
+    exec gosu appuser "$0" "$@"
+fi
+
 # 1) Wait until the database accepts TCP connections.
 python - <<'PY'
 import os, socket, time
