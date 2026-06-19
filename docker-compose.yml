@@ -8,7 +8,9 @@ services:
       MARIADB_PASSWORD: CHANGE_ME
       MARIADB_ROOT_PASSWORD: CHANGE_ME
     volumes:
-      - db_data:/var/lib/mysql
+      # MariaDB's own entrypoint runs as root and chowns the datadir to the
+      # mysql user, so a root-owned bind dir is fine (do NOT set `user:` here).
+      - ${DATA_ROOT:-/app/priceorbit}/db:/var/lib/mysql
     networks:
       - proxy
     healthcheck:
@@ -49,18 +51,17 @@ services:
     networks:
       - proxy
     volumes:
-      # Persist app state on separate sub-path volumes, not the whole /data.
-      # A named volume keeps the image dir's ownership only when mounted at that
-      # dir; mounting the parent /data comes up root-owned and the non-root app
-      # can't create /data/uploads. uploads (auto-created) + logs (app.log,
-      # rotated at 2 MB, kept 7 days).
-      - uploads_data:/data/uploads
-      - logs_data:/data/logs
+      # Single mount for all app state. The entrypoint runs as root, creates
+      # /data/uploads + /data/logs and chowns them to uid 1000, then drops to
+      # the non-root app via setpriv -- so a root-owned bind dir is fine here.
+      # logs hold app.log (rotated at 2 MB, kept 7 days); uploads is auto-filled.
+      - ${DATA_ROOT:-/app/priceorbit}/app:/data
 
-volumes:
-  db_data:
-  uploads_data:
-  logs_data:
+# All persistent state lives under one host dir (override with DATA_ROOT):
+#   /app/priceorbit/db   -> MariaDB datadir
+#   /app/priceorbit/app  -> app uploads + logs
+# Docker auto-creates these as root on first start; both containers self-heal
+# ownership, so no manual chown/mkdir is needed.
 
 networks:
   proxy:

@@ -6,8 +6,14 @@ set -e
 # can't write them. When started as root, fix ownership of the persistence dirs
 # and re-exec as appuser. No-op when already running as appuser.
 if [ "$(id -u)" = "0" ]; then
-    chown appuser:appuser /data/uploads /data/logs 2>/dev/null || true
-    exec gosu appuser "$0" "$@"
+    # A mount at /data (bind or named) overlays the dirs baked into the image,
+    # so (re)create the sub-dirs here. -R chown so the dirs AND any pre-existing
+    # root-owned files (e.g. an app.log from an earlier root run) end up uid 1000.
+    mkdir -p /data/uploads /data/logs
+    chown -R appuser:appuser /data 2>/dev/null || true
+    # setpriv (util-linux, in the base image) execs as appuser with its groups.
+    # --init-groups loads supplementary groups; pure exec keeps clean PID 1 + signals.
+    exec setpriv --reuid appuser --regid appuser --init-groups "$0" "$@"
 fi
 
 # 1) Wait until the database accepts TCP connections.
