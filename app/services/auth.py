@@ -47,7 +47,13 @@ def verify_password(password: str, stored: str) -> bool:
 # ---- signed session cookie ----
 
 SESSION_COOKIE = "priceorbit_session"
-SESSION_MAX_AGE = 60 * 60 * 24 * 14  # 14 days
+SESSION_MAX_AGE = 60 * 60 * 24 * 14  # 14 days — default + legacy-token fallback
+# Cookie Max-Age used when the lifetime is "never expires": far in the future so
+# the browser keeps it (a cookie with no Max-Age dies on browser close, which is
+# the opposite of what "never" should mean). The signed token carries exp=0.
+NEVER_COOKIE_MAX_AGE = 60 * 60 * 24 * 3650  # ~10 years
+# settings key holding the configured session lifetime, in seconds ("0" = never).
+SESSION_LIFETIME_KEY = "session_lifetime"
 
 
 def _secret() -> bytes:
@@ -62,9 +68,14 @@ def _b64d(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def sign_session(data: dict) -> str:
+def sign_session(data: dict, max_age: int | None = SESSION_MAX_AGE) -> str:
+    """Sign a session payload. ``max_age`` (seconds) bakes an absolute ``exp``
+    into the token so expiry survives without a server-side store; pass ``None``
+    for a non-expiring session (``exp`` = 0, never timed out by load_session)."""
     payload = dict(data)
-    payload.setdefault("iat", int(time.time()))
+    now = int(time.time())
+    payload.setdefault("iat", now)
+    payload["exp"] = now + int(max_age) if (max_age is not None and max_age > 0) else 0
     body = _b64e(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     sig = _b64e(hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).digest())
     return f"{body}.{sig}"
@@ -81,9 +92,41 @@ def load_session(token: str | None) -> dict | None:
         data = json.loads(_b64d(body))
     except (ValueError, json.JSONDecodeError):
         return None
-    if int(time.time()) - int(data.get("iat", 0)) > SESSION_MAX_AGE:
-        return None
+    now = int(time.time())
+    exp = data.get("exp")
+    if exp is None:
+        # Legacy token signed before exp existed: fall back to the default window.
+        if now - int(data.get("iat", 0)) > SESSION_MAX_AGE:
+            return None
+    else:
+        try:
+            exp = int(exp)
+        except (TypeError, ValueError):
+            return None
+        if exp != 0 and now > exp:   # exp == 0 means "never expires"
+            return None
     return data
+
+
+def resolve_session_max_age(db: Session) -> int | None:
+    """Configured session lifetime in seconds, or ``None`` for 'never expires'."""
+    raw = (settings_store.get_config(db).get(SESSION_LIFETIME_KEY) or "").strip()
+    try:
+        secs = int(raw)
+    except (TypeError, ValueError):
+        return SESSION_MAX_AGE
+    return None if secs <= 0 else secs
+
+
+def issue_session_cookie(resp, db: Session, user) -> None:
+    """Set the signed session cookie on ``resp`` honoring the configured lifetime.
+
+    The signed token carries the matching ``exp`` so the server enforces the same
+    expiry the cookie advertises (a tampered Max-Age can't extend the session)."""
+    max_age = resolve_session_max_age(db)
+    token = sign_session({"uid": user.id, "role": user.role}, max_age=max_age)
+    cookie_age = max_age if max_age is not None else NEVER_COOKIE_MAX_AGE
+    resp.set_cookie(SESSION_COOKIE, token, max_age=cookie_age, httponly=True, samesite="lax")
 
 
 # ---- user helpers ----

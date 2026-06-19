@@ -78,6 +78,9 @@ def _defaults() -> dict[str, str]:
         # authentication (Phase 2)
         "login_enabled": "0",
         "allow_local_login": "1",
+        # how long a signed-in session stays valid, in seconds ("0" = never).
+        # 1209600 = 14 days, matching auth.SESSION_MAX_AGE.
+        "session_lifetime": "1209600",
         # OIDC single sign-on (Phase 3)
         "oidc_enabled": "0",
         "oidc_provider_name": "SSO",
@@ -304,6 +307,19 @@ def should_send(cfg: dict, now: datetime | None = None) -> tuple[bool, str]:
 
 
 # ---- general options: choices for the Settings page ----
+
+# Session-lifetime presets for the Admin sign-in dropdown. Value is seconds as a
+# string; "0" means never expire. "custom" is handled by the route, not listed
+# here. The 14-day option is the recommended default (matches the .env fallback).
+SESSION_LIFETIMES = [
+    ("3600", "1 hour"),
+    ("28800", "8 hours"),
+    ("86400", "1 day"),
+    ("604800", "1 week"),
+    ("1209600", "2 weeks (recommended)"),
+    ("2592000", "30 days"),
+    ("0", "Never — stay signed in until logout"),
+]
 
 CURRENCIES = [
     ("USD", "US Dollar ($)"), ("CAD", "Canadian Dollar ($)"), ("EUR", "Euro (€)"),
