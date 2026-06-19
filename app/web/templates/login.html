@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sign in · {{ app_name }}</title>
   <link rel="icon" href="/static/img/logo.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_v }}" />
   {% if theme_style %}<style>:root{ {{ theme_style }} } html[data-theme="dark"]{ {{ theme_style }} }</style>{% endif %}
   <script>
     (function () {

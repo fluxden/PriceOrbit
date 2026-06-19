@@ -1,7 +1,9 @@
 """FastAPI web entrypoint for PriceOrbit."""
 from __future__ import annotations
 
+import logging
 import os
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -23,6 +25,15 @@ app.include_router(web_router)
 
 _AUTH_EXEMPT = {"/login", "/logout", "/health"}
 _ADMIN_ONLY_PREFIXES = ("/users", "/settings", "/alerts", "/admin")
+
+# Request access log -> shared log file (the Admin → Logs table parses these).
+# Static assets and the health probe are skipped to keep the log readable.
+_access_log = logging.getLogger("access")
+_ACCESS_SKIP = ("/static", "/uploads", "/favicon")
+
+# Auth/middleware errors. Surfaced (not swallowed) so a broken schema or DB
+# hiccup that disrupts sign-in is visible in Admin → Logs instead of silent.
+_auth_log = logging.getLogger("auth")
 
 
 @app.on_event("startup")
@@ -54,22 +65,59 @@ async def require_login(request, call_next):
     path = request.url.path
     if path.startswith(("/static", "/uploads", "/login/oidc", "/auth/oidc")) or path in _AUTH_EXEMPT:
         return await call_next(request)
+
+    from app.database import SessionLocal
+    from app.services import auth
+
+    db = SessionLocal()
     try:
-        from app.database import SessionLocal
-        from app.services import auth
-        db = SessionLocal()
+        # Whether sign-in is on. A transient failure reading this is ambiguous —
+        # we don't know if auth is required — so fail OPEN to avoid locking
+        # everyone out over a DB hiccup (anti-lockout). The error is logged.
         try:
-            if auth.login_enabled(db):
+            login_on = auth.login_enabled(db)
+        except Exception:  # noqa: BLE001
+            _auth_log.exception("require_login: reading login_enabled failed for %s; allowing through", path)
+            return await call_next(request)
+
+        if login_on:
+            # Sign-in IS required. If the user can't be resolved — e.g. a schema
+            # mismatch from a migration that never applied — fail CLOSED and send
+            # to /login. Failing open here would silently bypass authentication.
+            try:
                 user = auth.current_user(request, db)
-                if user is None:
-                    return RedirectResponse(f"/login?next={quote(path, safe='')}", status_code=303)
-                if user.role != "admin" and path.startswith(_ADMIN_ONLY_PREFIXES):
-                    return RedirectResponse("/profile?error=Admins+only", status_code=303)
-        finally:
-            db.close()
-    except Exception:  # noqa: BLE001 — fail open so a settings/DB hiccup can't lock everyone out
-        pass
+            except Exception:  # noqa: BLE001
+                _auth_log.exception("require_login: user lookup failed for %s; denying (sign-in required)", path)
+                return RedirectResponse(f"/login?next={quote(path, safe='')}", status_code=303)
+            if user is None:
+                return RedirectResponse(f"/login?next={quote(path, safe='')}", status_code=303)
+            if user.role != "admin" and path.startswith(_ADMIN_ONLY_PREFIXES):
+                return RedirectResponse("/profile?error=Admins+only", status_code=303)
+    finally:
+        db.close()
     return await call_next(request)
+
+
+# Added after require_login so it wraps it (last-added middleware is outermost),
+# letting it time and log auth redirects too.
+@app.middleware("http")
+async def access_logging(request, call_next):
+    """Log one structured line per request: ``<client> <method> <path> <status>
+    <duration>ms``. 4xx are WARN, 5xx are ERROR, so the level reflects health."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    path = request.url.path
+    if not path.startswith(_ACCESS_SKIP) and path != "/health":
+        dur_ms = (time.perf_counter() - start) * 1000.0
+        xff = request.headers.get("x-forwarded-for", "")
+        client = xff.split(",")[0].strip() if xff else (
+            request.client.host if request.client else "-")
+        status = response.status_code
+        level = logging.INFO if status < 400 else (
+            logging.WARNING if status < 500 else logging.ERROR)
+        _access_log.log(level, "%s %s %s %d %.1fms",
+                        client, request.method, path, status, dur_ms)
+    return response
 
 
 @app.get("/health")

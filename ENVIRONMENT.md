@@ -16,7 +16,7 @@ optional.
 | `APP_SECRET` | Secret key used to sign login session cookies. Changing it invalidates all existing sessions. | `change-me` | Any long, random string (32+ chars recommended). | ✓ |
 | `APP_NAME` | Display name shown in the UI title and headings. | `PriceOrbit` | Any string. | |
 | `TIMEZONE` | Time zone used for schedules and for displaying timestamps. | `UTC` | Any IANA time-zone name, e.g. `UTC`, `America/New_York`, `Europe/London`, `Asia/Tokyo`. | |
-| `UPLOADS_DIR` | Directory inside the container where uploaded login-page assets (logo, background) are stored. Keep it on a mounted volume to persist. | `/data/uploads` | An absolute path inside the container. | |
+| `UPLOADS_DIR` | Directory inside the container where uploaded login-page assets (logo, background) are stored. Auto-created on startup. Keep it on a mounted volume to persist (the bundled compose mounts the parent `/data`). | `/data/uploads` | An absolute path inside the container. | |
 | `APP_VERSION` | Informational version string shown on the Settings page. Not normally set by hand. | `0.5.0` | Any string. | |
 | `LOGIN_TYPE` | **Sign-in override / lockout recovery.** When set, forces the login mode regardless of the Admin-UI setting, so a misconfigured OIDC can't lock you out — set it and redeploy to recover, then unset to manage sign-in from the UI again. `OFF` = no sign-in, but only until an admin account exists — after that `OFF` is upgraded to `Standard` so auth can't be bypassed via the env var (it still disables a broken OIDC, which is the recovery); `Standard` = local username/password only (OIDC off); `OIDC` = OIDC on (local login kept as a fallback). | (empty = use UI settings) | `OFF`, `Standard`, `OIDC` (case-insensitive). | |
 
@@ -27,10 +27,18 @@ file, which the **Admin → Logs** page tails. The level is also editable at
 runtime there (it persists to the database and overrides `LOG_LEVEL`); a runtime
 change applies to the web app immediately and to the worker within ~5 minutes.
 
+> **The log directory must be writable by the app user (uid 1000).** The
+> container runs as non-root, so file logging is best-effort: if `LOG_FILE`'s
+> directory isn't writable it is **silently skipped** and the Logs page stays
+> empty — `docker logs` shows `File logging disabled: ... Permission denied`. The
+> container entrypoint chowns `/data` to uid 1000 on startup, so this normally
+> only happens when the host dir is on a read-only or chown-resistant filesystem.
+> See **Storage and permissions** in [`README.md`](./README.md).
+
 | Variable | Description | Default | Possible values | Required |
 | --- | --- | --- | --- | --- |
 | `LOG_LEVEL` | Initial log level. Lower levels log more (DEBUG/TRACE include each scrape attempt). | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace`. | |
-| `LOG_FILE` | Path the combined log is written to (rotates at ~2 MB). Put it on a mounted volume to keep logs across restarts. | `/data/app.log` | An absolute path inside the container. | |
+| `LOG_FILE` | Path the combined log is written to. Each file is capped at 2 MB, then rotated; rotated files are kept for 7 days and then deleted. Put it on a mounted volume to keep logs across container recreations (the bundled compose mounts the parent `/data`). | `/data/logs/app.log` | An absolute path inside the container. | |
 
 ## Database
 

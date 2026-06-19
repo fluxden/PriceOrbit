@@ -25,21 +25,247 @@
 </form>
 
 <!-- Log output -->
-<section class="form-card">
+<section class="form-card form-card--wide">
+  {% set ns = namespace(fq='') %}{% for n in selected_files %}{% set ns.fq = ns.fq + '&files=' + (n|urlencode) %}{% endfor %}
   <div class="chart-head">
-    <h2 class="card-title">Recent output <span class="field__opt">({{ log_count }} lines, newest first)</span></h2>
+    <h2 class="card-title">Recent output <span class="field__opt">(<span id="logvisible">{{ log_count }}</span> of {{ log_count }} lines, newest first)</span></h2>
     <div class="chart-ranges" role="group" aria-label="Lines to show">
-      <a class="rangebtn {{ 'is-active' if lines == 100 }}" href="/admin/logs?lines=100">100</a>
-      <a class="rangebtn {{ 'is-active' if lines == 300 }}" href="/admin/logs?lines=300">300</a>
-      <a class="rangebtn {{ 'is-active' if lines == 1000 }}" href="/admin/logs?lines=1000">1000</a>
+      <a class="rangebtn {{ 'is-active' if lines == 100 }}" href="/admin/logs?lines=100{{ ns.fq }}">100</a>
+      <a class="rangebtn {{ 'is-active' if lines == 300 }}" href="/admin/logs?lines=300{{ ns.fq }}">300</a>
+      <a class="rangebtn {{ 'is-active' if lines == 1000 }}" href="/admin/logs?lines=1000{{ ns.fq }}">1000</a>
     </div>
   </div>
-  {% if log_lines %}
-  <pre class="logbox">{% for line in log_lines %}{{ line }}
-{% endfor %}</pre>
+  {% if log_groups %}
+  <div class="logtools">
+    <div class="logtools__left">
+      <form class="logfiles" method="get" action="/admin/logs">
+        <input type="hidden" name="lines" value="{{ lines }}" />
+        <details class="dropdown">
+          <summary class="btn">Files ({{ selected_files|length }}/{{ log_files|length }})</summary>
+          <div class="dropdown__menu">
+            {% for f in log_files %}
+            <label class="check"><input type="checkbox" name="files" value="{{ f.name }}" {{ 'checked' if f.name in selected_files }} />
+              <span class="logfiles__name">{{ f.label or f.when }}</span>
+              <span class="logfiles__meta">{{ f.size_kb }} KB</span></label>
+            {% endfor %}
+            <button class="btn btn--primary" type="submit">View selected</button>
+          </div>
+        </details>
+      </form>
+      <div class="logfilters" role="group" aria-label="Filter by level">
+        <span class="logfilters__label">Level:</span>
+        {% for lvl in log_levels %}
+        <button type="button" class="logfilter is-on" data-level="{{ lvl }}">{{ lvl }}</button>
+        {% endfor %}
+      </div>
+      <div class="logdates">
+        <label>From <input type="datetime-local" id="logfrom" step="1" /></label>
+        <label>To <input type="datetime-local" id="logto" step="1" /></label>
+        <button type="button" class="btn btn--ghost" id="logdateclear">Clear</button>
+      </div>
+    </div>
+    <button type="button" class="btn" id="logexport">Export CSV</button>
+  </div>
+  <div class="logbox" id="logbox">
+    <table class="logtable" id="logtable">
+      <thead>
+        <tr>
+          <th class="sortable" data-sort="ts">Time</th>
+          <th class="sortable" data-sort="level">Level</th>
+          <th class="sortable" data-sort="source">Source</th>
+          <th class="sortable" data-sort="client">Client</th>
+          <th class="sortable" data-sort="method">Method</th>
+          <th class="sortable" data-sort="path">Path</th>
+          <th class="sortable" data-sort="status">Status</th>
+          <th class="sortable" data-sort="dur">Duration</th>
+        </tr>
+      </thead>
+      <tbody id="logbody">
+        {% for g in log_groups %}{% set gid = loop.index0 %}{% for r in g %}
+        <tr class="logrow{{ ' logrow--cont' if r.cont }}"
+            data-group="{{ gid }}" data-cont="{{ '1' if r.cont else '' }}"
+            data-kind="{{ r.kind }}" data-level="{{ r.level }}" data-ts="{{ r.ts }}"
+            data-time="{{ r.time }}" data-source="{{ r.source }}" data-client="{{ r.client }}"
+            data-method="{{ r.method }}" data-path="{{ r.path }}" data-status="{{ r.status }}"
+            data-dur="{{ r.duration }}" data-msg="{{ r.message }}">
+          {% if r.kind == 'access' %}
+          <td class="lt-time">{{ r.time }}</td>
+          <td class="lt-level"><span class="lvl lvl--{{ r.level|lower }}">{{ r.level }}</span></td>
+          <td class="lt-source">{{ r.source }}</td>
+          <td class="lt-client">{{ r.client }}</td>
+          <td class="lt-method"><span class="meth meth--{{ r.method|lower }}">{{ r.method }}</span></td>
+          <td class="lt-path">{{ r.path }}</td>
+          <td class="lt-status"><span class="scode {{ 'scode--ok' if r.status|int < 400 else 'scode--bad' }}">{{ r.status }}</span></td>
+          <td class="lt-dur">{{ r.duration }}</td>
+          {% elif r.cont %}
+          <td class="lt-time"></td>
+          <td class="lt-level"></td>
+          <td class="lt-msg lt-msg--cont" colspan="6">{{ r.message }}</td>
+          {% else %}
+          <td class="lt-time">{{ r.time }}</td>
+          <td class="lt-level"><span class="lvl lvl--{{ r.level|lower }}">{{ r.level }}</span></td>
+          <td class="lt-msg" colspan="6"><span class="lt-src">{{ r.source }}</span>{{ r.message }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}{% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
   <p class="field__hint">No log output yet at <span class="mono">{{ log_file }}</span>. Lines appear as the app and worker run.</p>
   {% endif %}
-  <p class="field__hint">File: <span class="mono">{{ log_file }}</span> (rotates at ~2 MB). Container stdout is also captured by <span class="mono">docker logs</span>.</p>
+  <p class="field__hint">Files rotate at 2 MB and are kept 7 days. Live file: <span class="mono">{{ log_file }}</span> — pick rotated files from <strong>Files</strong>. Container stdout is also captured by <span class="mono">docker logs</span>.</p>
 </section>
+
+<script>
+  /* Logs table: level + date/time filtering, column sorting (groups stay
+     together), and CSV export of the visible rows. */
+  (function () {
+    var body = document.getElementById('logbody');
+    if (!body) return;
+    var table = document.getElementById('logtable');
+    var filters = Array.prototype.slice.call(document.querySelectorAll('.logfilter'));
+    var rows = Array.prototype.slice.call(body.querySelectorAll('.logrow'));
+    var headers = Array.prototype.slice.call(table.querySelectorAll('th.sortable'));
+    var countEl = document.getElementById('logvisible');
+    var fromEl = document.getElementById('logfrom');
+    var toEl = document.getElementById('logto');
+
+    var LEVEL_RANK = { FATAL: 0, ERROR: 1, WARN: 2, INFO: 3, DEBUG: 4, TRACE: 5, OTHER: 6 };
+
+    /* Group rows by their entry so sorting moves an entry + its continuation
+       lines as one unit. */
+    var groups = {}, order = [];
+    rows.forEach(function (r) {
+      var g = r.getAttribute('data-group');
+      if (!groups[g]) { groups[g] = []; order.push(g); }
+      groups[g].push(r);
+    });
+    var pos = {};
+    order.forEach(function (g, i) { pos[g] = i; });
+    function primary(g) {
+      var list = groups[g];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].getAttribute('data-cont') !== '1') return list[i];
+      }
+      return list[0];
+    }
+
+    /* ---- filtering ---- */
+    function activeLevels() {
+      var on = {};
+      filters.forEach(function (f) {
+        if (f.classList.contains('is-on')) on[f.getAttribute('data-level')] = true;
+      });
+      return on;
+    }
+    function inputTs(v, endOfMinute) {
+      var m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d))?/.exec(v || '');
+      if (!m) return null;
+      return Number(m[1] + m[2] + m[3] + m[4] + m[5] + (m[6] || (endOfMinute ? '59' : '00')));
+    }
+    function apply() {
+      var on = activeLevels();
+      var fromTs = inputTs(fromEl && fromEl.value, false);
+      var toTs = inputTs(toEl && toEl.value, true);
+      var dated = fromTs !== null || toTs !== null;
+      var shown = 0;
+      rows.forEach(function (r) {
+        var vis = !!on[r.getAttribute('data-level')];
+        if (vis && dated) {
+          var t = Number(r.getAttribute('data-ts') || 0);
+          if (!t) vis = false;
+          else if (fromTs !== null && t < fromTs) vis = false;
+          else if (toTs !== null && t > toTs) vis = false;
+        }
+        r.style.display = vis ? '' : 'none';
+        if (vis) shown++;
+      });
+      if (countEl) countEl.textContent = shown;
+    }
+
+    /* ---- sorting (by entry group) ---- */
+    var sortKey = null, sortDir = 1;
+    function keyVal(r, key) {
+      switch (key) {
+        case 'ts': return Number(r.getAttribute('data-ts') || 0);
+        case 'level': var k = LEVEL_RANK[r.getAttribute('data-level')]; return k === undefined ? 99 : k;
+        case 'status': return Number(r.getAttribute('data-status') || 0);
+        case 'dur': return parseFloat(r.getAttribute('data-dur')) || 0;
+        case 'source': return (r.getAttribute('data-source') || '').toLowerCase();
+        case 'client': return (r.getAttribute('data-client') || '').toLowerCase();
+        case 'method': return (r.getAttribute('data-method') || '').toLowerCase();
+        case 'path': return (r.getAttribute('data-path') || '').toLowerCase();
+      }
+      return 0;
+    }
+    function sortBy(key) {
+      if (sortKey === key) sortDir = -sortDir; else { sortKey = key; sortDir = 1; }
+      var gs = order.slice();
+      gs.sort(function (a, b) {
+        var va = keyVal(primary(a), key), vb = keyVal(primary(b), key);
+        if (va < vb) return -sortDir;
+        if (va > vb) return sortDir;
+        return pos[a] - pos[b];   // stable: keep original (newest-first) order on ties
+      });
+      var frag = document.createDocumentFragment();
+      gs.forEach(function (g) { groups[g].forEach(function (r) { frag.appendChild(r); }); });
+      body.appendChild(frag);
+      headers.forEach(function (h) {
+        h.classList.remove('sort-asc', 'sort-desc');
+        if (h.getAttribute('data-sort') === key) h.classList.add(sortDir > 0 ? 'sort-asc' : 'sort-desc');
+      });
+    }
+
+    /* ---- wiring ---- */
+    filters.forEach(function (f) {
+      f.addEventListener('click', function () { f.classList.toggle('is-on'); apply(); });
+    });
+    headers.forEach(function (h) {
+      h.addEventListener('click', function () { sortBy(h.getAttribute('data-sort')); });
+    });
+    if (fromEl) fromEl.addEventListener('input', apply);
+    if (toEl) toEl.addEventListener('input', apply);
+    var clearBtn = document.getElementById('logdateclear');
+    if (clearBtn) clearBtn.addEventListener('click', function () {
+      if (fromEl) fromEl.value = '';
+      if (toEl) toEl.value = '';
+      apply();
+    });
+
+    /* ---- CSV export of visible rows ---- */
+    function csvCell(v) {
+      v = String(v == null ? '' : v);
+      if (/^[=+\-@]/.test(v)) v = "'" + v;   // neutralize spreadsheet formula injection
+      return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    }
+    var exportBtn = document.getElementById('logexport');
+    if (exportBtn) exportBtn.addEventListener('click', function () {
+      var out = ['Time,Level,Source,Client,Method,Path,Status,Duration,Message'];
+      rows.forEach(function (r) {
+        if (r.style.display === 'none') return;
+        var msg = r.getAttribute('data-kind') === 'access' ? '' : (r.getAttribute('data-msg') || '');
+        out.push([
+          r.getAttribute('data-time'), r.getAttribute('data-level'), r.getAttribute('data-source'),
+          r.getAttribute('data-client'), r.getAttribute('data-method'),
+          r.getAttribute('data-path'), r.getAttribute('data-status'),
+          r.getAttribute('data-dur'), msg
+        ].map(csvCell).join(','));
+      });
+      var csv = String.fromCharCode(0xFEFF) + out.join('\r\n');   // BOM so Excel reads UTF-8
+      var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      var ts = new Date().toISOString().replace('T', '_').replace(/:/g, '-').slice(0, 19);
+      a.href = url;
+      a.download = 'priceorbit-logs-' + ts + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    apply();
+  })();
+</script>
 {% endblock %}

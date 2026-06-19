@@ -13,6 +13,7 @@ LABELS = {
     "admin.created": "Admin account created",
     "login.enabled": "Login requirement enabled",
     "login.disabled": "Login requirement disabled",
+    "session.lifetime_changed": "Session length changed",
     "user.created": "User created",
     "user.role_changed": "Role changed",
     "user.activated": "User enabled",

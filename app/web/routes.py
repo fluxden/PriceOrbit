@@ -7,10 +7,12 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
 
+import logging
 import os
 import secrets
+import time
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
@@ -45,6 +47,12 @@ from app.services.product_detail import (
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+# Cache-busting token for static CSS/JS. Recomputed each process start, so a
+# redeploy/restart forces browsers (and any caching reverse proxy) to fetch the
+# new files instead of serving stale assets against freshly-rendered HTML — the
+# cause of "new bubble markup, dead old dropdown JS" after an upgrade.
+_ASSET_V = str(int(time.time()))
 
 
 @pass_context
@@ -121,6 +129,48 @@ NAV_ITEMS = [
 ]
 
 
+def _bubble_initials(user) -> str:
+    """One- or two-letter initials for the user bubble."""
+    src = (getattr(user, "display_name", None) or user.username or "").strip()
+    parts = src.split()
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    return src[:2].upper()
+
+
+def _contrast_text(hex_color: str) -> str:
+    """Pick black/white text for a solid bubble background by luminance."""
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except (ValueError, IndexError):
+        return "#fff"
+    return "#111" if (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 else "#fff"
+
+
+def _bubble_style(user) -> str:
+    """Inline style for a standalone bubble (profile preview); empty = default."""
+    color = (getattr(user, "bubble_color", None) or "").strip()
+    if not color:
+        return ""
+    if getattr(user, "bubble_transparent", False):
+        return f"background:transparent;border-color:{color};color:{color};"
+    return f"background:{color};border-color:{color};color:{_contrast_text(color)};"
+
+
+def _bubble_vars(user) -> str:
+    """CSS custom properties for the whole top-bar action group, so the theme +
+    notification icon buttons share the user's bubble color. Empty = default."""
+    color = (getattr(user, "bubble_color", None) or "").strip()
+    if not color:
+        return ""
+    if getattr(user, "bubble_transparent", False):
+        return f"--bubble-bg:transparent;--bubble-border:{color};--bubble-fg:{color};"
+    return f"--bubble-bg:{color};--bubble-border:{color};--bubble-fg:{_contrast_text(color)};"
+
+
 def _base_context(request: Request, active: str) -> dict:
     theme_style, theme_base, cur_user, login_on, time_format = "", "", None, False, "24"
     tz_name, date_format = "UTC", "%b %d, %Y"
@@ -139,17 +189,23 @@ def _base_context(request: Request, active: str) -> dict:
         finally:
             _db.close()
     except Exception:  # noqa: BLE001 — cosmetic/auth context must never block a page
-        pass
+        # Don't crash the page, but don't swallow silently either: a logged
+        # error here (e.g. a missing-column schema mismatch) is the difference
+        # between a diagnosable problem and a "nothing happened" mystery.
+        logging.getLogger("auth").exception("base context: loading user/theme context failed")
+    # Profile is reached from the user bubble menu, not the sidebar. Non-admins
+    # only see the monitoring pages.
     nav = NAV_ITEMS
     if login_on and cur_user is not None and cur_user.role != "admin":
         nav = [item for item in NAV_ITEMS if item[0] in ("home", "price", "stock")]
-        nav = nav + [("profile", "Profile", "/profile")]
-    elif login_on and cur_user is not None:
-        nav = NAV_ITEMS + [("profile", "Profile", "/profile")]
+    bubble = {"style": _bubble_style(cur_user), "vars": _bubble_vars(cur_user),
+              "initials": _bubble_initials(cur_user)} \
+        if cur_user is not None else {"style": "", "vars": "", "initials": ""}
     return {"request": request, "app_name": settings.app_name, "active": active,
             "nav_items": nav, "theme_style": theme_style, "theme_base": theme_base,
             "current_user": cur_user, "login_enabled": login_on, "time_format": time_format,
-            "timezone": tz_name, "date_format": date_format}
+            "timezone": tz_name, "date_format": date_format, "bubble": bubble,
+            "asset_v": _ASSET_V}
 
 
 def _sorted(rows: list, sort: str) -> list:
@@ -870,7 +926,7 @@ def test_alert(account_id: int, db: Session = Depends(get_db)):
 # ----------------------------- Placeholders -----------------------------
 
 @router.post("/settings/security/admin")
-def create_admin(db: Session = Depends(get_db), username: str = Form(""),
+def create_admin(request: Request, db: Session = Depends(get_db), username: str = Form(""),
                  password: str = Form(""), confirm: str = Form("")):
     if auth.admin_exists(db):
         return RedirectResponse("/admin?error=An+admin+already+exists", status_code=303)
@@ -883,9 +939,17 @@ def create_admin(db: Session = Depends(get_db), username: str = Form(""),
         return RedirectResponse("/admin?error=Passwords+do+not+match", status_code=303)
     if auth.get_user_by_username(db, username):
         return RedirectResponse("/admin?error=That+username+is+taken", status_code=303)
-    auth.create_user(db, username, password, role="admin")
+    admin = auth.create_user(db, username, password, role="admin")
     audit.log(db, "admin.created", actor="system", detail=f"username={username}")
-    return RedirectResponse("/admin?msg=Admin+created.+You+can+now+enable+login.", status_code=303)
+    # The app now has an account to protect, so turn sign-in on and send the
+    # user straight to the login page. Previously this left login disabled and
+    # stayed on /admin, so to the user "nothing happened". Existing single-user
+    # products are claimed by this first admin (same as the manual toggle).
+    settings_store.set_values(db, {"login_enabled": "1"})
+    db.execute(update(Product).where(Product.user_id.is_(None)).values(user_id=admin.id))
+    db.commit()
+    _audit(request, db, "login.enabled", detail="auto-enabled on first admin")
+    return RedirectResponse("/login", status_code=303)
 
 
 @router.post("/settings/security/login")
@@ -905,6 +969,33 @@ def toggle_login(request: Request, db: Session = Depends(get_db), login_enabled:
     _audit(request, db, "login.enabled" if enabling else "login.disabled")
     state = "enabled" if enabling else "disabled"
     return RedirectResponse(f"/admin?msg=Login+{state}", status_code=303)
+
+
+# Custom-length units offered in the dropdown, in seconds.
+_SESSION_UNITS = {"minutes": 60, "hours": 3600, "days": 86400}
+
+
+@router.post("/settings/security/session")
+def save_session_lifetime(request: Request, db: Session = Depends(get_db),
+                          session_lifetime: str = Form("1209600"),
+                          custom_value: str = Form(""), custom_unit: str = Form("hours")):
+    """Persist how long a sign-in stays valid. Applies to sessions created after."""
+    if session_lifetime == "custom":
+        try:
+            n = int(custom_value)
+        except (TypeError, ValueError):
+            n = 0
+        if n < 1:
+            return RedirectResponse("/admin?error=Enter+a+custom+length+of+at+least+1", status_code=303)
+        secs = n * _SESSION_UNITS.get(custom_unit, 3600)
+    else:
+        try:
+            secs = max(int(session_lifetime), 0)   # 0 = never
+        except (TypeError, ValueError):
+            secs = auth.SESSION_MAX_AGE
+    settings_store.set_values(db, {"session_lifetime": str(secs)})
+    _audit(request, db, "session.lifetime_changed", detail=("never" if secs == 0 else f"{secs}s"))
+    return RedirectResponse("/admin?msg=Session+length+saved", status_code=303)
 
 
 @router.post("/settings/security/oidc")
@@ -939,17 +1030,19 @@ def save_oidc(request: Request, db: Session = Depends(get_db),
 
 _ALLOWED_IMG = {".png", ".jpg", ".jpeg", ".webp", ".svg", ".gif"}
 _MAX_UPLOAD = 2 * 1024 * 1024
+_MAX_LOGO_UPLOAD = 10 * 1024 * 1024
 
 
-def _save_upload(file: UploadFile | None, prefix: str) -> str | None:
+def _save_upload(file: UploadFile | None, prefix: str,
+                 max_bytes: int = _MAX_UPLOAD) -> str | None:
     """Save an uploaded image; returns served path, or 'BADTYPE'/'TOOBIG', or None."""
     if file is None or not file.filename:
         return None
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in _ALLOWED_IMG:
         return "BADTYPE"
-    data = file.file.read(_MAX_UPLOAD + 1)
-    if len(data) > _MAX_UPLOAD:
+    data = file.file.read(max_bytes + 1)
+    if len(data) > max_bytes:
         return "TOOBIG"
     os.makedirs(settings.uploads_dir, exist_ok=True)
     name = f"{prefix}-{secrets.token_hex(6)}{ext}"
@@ -967,11 +1060,11 @@ def save_login_page(db: Session = Depends(get_db), heading: str = Form(""),
     if remove_logo:
         values["login_logo"] = ""
     else:
-        res = _save_upload(logo, "login-logo")
+        res = _save_upload(logo, "login-logo", _MAX_LOGO_UPLOAD)
         if res == "BADTYPE":
             return RedirectResponse("/admin?error=Logo+must+be+an+image", status_code=303)
         if res == "TOOBIG":
-            return RedirectResponse("/admin?error=Logo+exceeds+2+MB", status_code=303)
+            return RedirectResponse("/admin?error=Logo+exceeds+10+MB", status_code=303)
         if res:
             values["login_logo"] = res
     if remove_bg:
@@ -1008,7 +1101,7 @@ def _login_context(request: Request, db: Session, **extra) -> dict:
         "allow_local_login": cfg.get("allow_local_login", "1") == "1",
         "oidc_enabled": cfg.get("oidc_enabled", "0") == "1",
         "oidc_provider_name": cfg.get("oidc_provider_name") or "SSO",
-        "next": "/", "error": None,
+        "next": "/", "error": None, "asset_v": _ASSET_V,
     }
     ctx.update(extra)
     return ctx
@@ -1038,8 +1131,7 @@ def login_submit(request: Request, db: Session = Depends(get_db), username: str 
     db.commit()
     audit.log(db, "login.success", actor=user.username, ip=_client_ip(request))
     resp = RedirectResponse(target, status_code=303)
-    resp.set_cookie(auth.SESSION_COOKIE, auth.sign_session({"uid": user.id, "role": user.role}),
-                    max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax")
+    auth.issue_session_cookie(resp, db, user)
     return resp
 
 
@@ -1133,8 +1225,7 @@ def oidc_callback(request: Request, db: Session = Depends(get_db),
     db.commit()
     audit.log(db, "login.success", actor=user.username, detail="via SSO", ip=_client_ip(request))
     resp = RedirectResponse(_safe_next(data.get("next", "/")), status_code=303)
-    resp.set_cookie(auth.SESSION_COOKIE, auth.sign_session({"uid": user.id, "role": user.role}),
-                    max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax")
+    auth.issue_session_cookie(resp, db, user)
     resp.delete_cookie(OIDC_COOKIE)
     return resp
 
@@ -1243,14 +1334,53 @@ def profile_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse(request, "profile.html", ctx)
 
 
-@router.post("/profile/name")
-def profile_name(request: Request, db: Session = Depends(get_db), display_name: str = Form("")):
+@router.post("/profile/account")
+def profile_account(request: Request, db: Session = Depends(get_db), username: str = Form(""),
+                    display_name: str = Form(""), email: str = Form("")):
     cur = auth.current_user(request, db)
     if cur is None:
         return RedirectResponse("/", status_code=303)
+    username = username.strip()
+    email = email.strip()
+    if len(username) < 3:
+        return RedirectResponse("/profile?error=Username+must+be+at+least+3+characters", status_code=303)
+    if email and "@" not in email:
+        return RedirectResponse("/profile?error=Enter+a+valid+email+address", status_code=303)
+    if username != cur.username:
+        existing = auth.get_user_by_username(db, username)
+        if existing is not None and existing.id != cur.id:
+            return RedirectResponse("/profile?error=That+username+is+taken", status_code=303)
+        cur.username = username
     cur.display_name = display_name.strip() or None
+    cur.email = email or None
     db.commit()
+    _audit(request, db, "profile.updated", detail=cur.username)
     return RedirectResponse("/profile?msg=Profile+saved", status_code=303)
+
+
+@router.post("/profile/appearance")
+def profile_appearance(request: Request, db: Session = Depends(get_db),
+                       bubble_color: str = Form(""), bubble_transparent: str = Form(""),
+                       bubble_display: str = Form("name"), remove_avatar: str = Form(""),
+                       avatar: UploadFile = File(None)):
+    cur = auth.current_user(request, db)
+    if cur is None:
+        return RedirectResponse("/", status_code=303)
+    cur.bubble_color = bubble_color.strip() or None
+    cur.bubble_transparent = bool(bubble_transparent)
+    cur.bubble_display = "initials" if bubble_display == "initials" else "name"
+    if remove_avatar:
+        cur.avatar_url = None
+    else:
+        res = _save_upload(avatar, "avatar")
+        if res == "BADTYPE":
+            return RedirectResponse("/profile?error=Avatar+must+be+an+image", status_code=303)
+        if res == "TOOBIG":
+            return RedirectResponse("/profile?error=Avatar+exceeds+2+MB", status_code=303)
+        if res:
+            cur.avatar_url = res
+    db.commit()
+    return RedirectResponse("/profile?msg=Appearance+saved", status_code=303)
 
 
 @router.post("/profile/password")
@@ -1441,10 +1571,27 @@ def settings_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse(request, "settings.html", ctx)
 
 
+def _session_custom_fields(secs: int) -> tuple[int, str]:
+    """Pick the friendliest whole-number (value, unit) for a custom lifetime."""
+    if secs % 86400 == 0:
+        return secs // 86400, "days"
+    if secs % 3600 == 0:
+        return secs // 3600, "hours"
+    return max(secs // 60, 1), "minutes"
+
+
 @router.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request, db: Session = Depends(get_db),
                msg: str | None = None, error: str | None = None):
     cfg = settings_store.get_public(db)
+    # Decide whether the stored lifetime matches a preset or needs the custom row.
+    preset_vals = {v for v, _ in settings_store.SESSION_LIFETIMES}
+    cur_secs = cfg.get("session_lifetime", "1209600")
+    session_is_custom = cur_secs not in preset_vals
+    try:
+        custom_value, custom_unit = _session_custom_fields(int(cur_secs))
+    except (TypeError, ValueError):
+        custom_value, custom_unit = 24, "hours"
     ctx = _base_context(request, "admin")
     ctx.update({
         "cfg": cfg,
@@ -1452,6 +1599,9 @@ def admin_page(request: Request, db: Session = Depends(get_db),
         "admin_exists": auth.admin_exists(db),
         "login_locked": settings_store.login_type_override(db),
         "current_user": auth.current_user(request, db),
+        "session_lifetimes": settings_store.SESSION_LIFETIMES,
+        "session_is_custom": session_is_custom,
+        "session_custom_value": custom_value, "session_custom_unit": custom_unit,
         "flash_msg": msg, "flash_error": error,
     })
     return templates.TemplateResponse(request, "admin.html", ctx)
@@ -1459,17 +1609,32 @@ def admin_page(request: Request, db: Session = Depends(get_db),
 
 @router.get("/admin/logs", response_class=HTMLResponse)
 def admin_logs(request: Request, db: Session = Depends(get_db),
-               lines: int = 300, msg: str | None = None, error: str | None = None):
+               lines: int = 300, files: list[str] | None = Query(default=None),
+               msg: str | None = None, error: str | None = None):
     from app import logsetup
     level = settings_store.get_config(db).get("log_level") or settings.log_level
     lines = max(50, min(lines, 2000))
-    entries = logsetup.tail(settings.log_file, lines)
+    available = logsetup.list_files(settings.log_file)      # newest→oldest
+    names = [f["name"] for f in available]
+    selected = [n for n in (files or []) if n in names] or names[:1]   # default: live file
+    entries = logsetup.read_selected(settings.log_file, selected, lines)
+    groups = logsetup.parse_groups(entries)
+    groups.reverse()                            # newest entries first
+    # Always show the standard level chips; append TRACE/OTHER only when present
+    # so those lines aren't silently un-filterable (and thus hidden).
+    seen_levels = {r["level"] for g in groups for r in g}
+    base_chips = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"]
+    extra_chips = [lvl for lvl in ("TRACE", "OTHER") if lvl in seen_levels]
+    present = base_chips + extra_chips
     ctx = _base_context(request, "admin")
     ctx.update({
         "log_level": level,
         "level_names": logsetup.LEVEL_NAMES,
-        "log_lines": list(reversed(entries)),   # newest first
-        "log_count": len(entries),
+        "log_groups": groups,                   # entry groups, newest first
+        "log_levels": present,                  # levels present, for filter chips
+        "log_files": available,                 # available files, for the selector
+        "selected_files": selected,
+        "log_count": sum(len(g) for g in groups),
         "lines": lines,
         "log_file": settings.log_file,
         "current_user": auth.current_user(request, db),

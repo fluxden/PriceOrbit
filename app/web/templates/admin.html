@@ -13,7 +13,7 @@
 <section class="form-card">
   <h2 class="card-title">Tools</h2>
   <div class="backup-row">
-    <a class="btn" href="/admin/logs">Logs &amp; debug</a>
+    <a class="btn" href="/admin/logs">Logs</a>
     <a class="btn" href="/users">Manage users</a>
   </div>
 </section>
@@ -60,6 +60,31 @@ DB_PASSWORD=your-password</pre>
     <label class="check"><input type="checkbox" name="login_enabled" value="1" {{ 'checked' if cfg.login_enabled == '1' }} {{ 'disabled' if login_locked }} /> Require sign-in to use PriceOrbit</label>
     <div class="form-actions"><button class="btn btn--primary" type="submit" {{ 'disabled' if login_locked }}>Save sign-in setting</button></div>
   </form>
+  <form method="post" action="/settings/security/session" class="stack">
+    <div class="field">
+      <label>Keep users signed in for</label>
+      <select name="session_lifetime" id="session_lifetime"
+              onchange="document.getElementById('session_custom').style.display = this.value === 'custom' ? '' : 'none';">
+        {% for val, lbl in session_lifetimes %}
+        <option value="{{ val }}" {{ 'selected' if not session_is_custom and cfg.session_lifetime == val }}>{{ lbl }}</option>
+        {% endfor %}
+        <option value="custom" {{ 'selected' if session_is_custom }}>Custom…</option>
+      </select>
+    </div>
+    <div class="field" id="session_custom" style="{{ '' if session_is_custom else 'display:none' }}">
+      <label>Custom length</label>
+      <div class="detail-grid">
+        <input type="number" name="custom_value" min="1" value="{{ session_custom_value }}" placeholder="e.g. 12" />
+        <select name="custom_unit">
+          <option value="minutes" {{ 'selected' if session_custom_unit == 'minutes' }}>Minutes</option>
+          <option value="hours" {{ 'selected' if session_custom_unit == 'hours' }}>Hours</option>
+          <option value="days" {{ 'selected' if session_custom_unit == 'days' }}>Days</option>
+        </select>
+      </div>
+    </div>
+    <p class="field__hint">How long a sign-in stays valid before the user must log in again. <strong>Never</strong> keeps them signed in until they log out. Takes effect on the next sign-in.</p>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Save session length</button></div>
+  </form>
   <div class="backup-row">
     <a class="btn" href="/users">Manage users</a>
   </div>
@@ -76,7 +101,7 @@ DB_PASSWORD=your-password</pre>
       <div class="field"><label>Subtext</label><input type="text" name="subtext" value="{{ cfg.login_subtext }}" placeholder="Sign in to continue." /></div>
     </div>
     <div class="detail-grid">
-      <div class="field"><label>Logo image <span class="field__opt">(PNG/SVG, ≤2 MB)</span></label>
+      <div class="field"><label>Logo image <span class="field__opt">(PNG/SVG, ≤10 MB)</span></label>
         <input type="file" name="logo" accept="image/*" />
         {% if cfg.login_logo %}<label class="check"><input type="checkbox" name="remove_logo" value="1" /> Remove current logo</label>{% endif %}
       </div>
