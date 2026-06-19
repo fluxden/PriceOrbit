@@ -51,6 +51,7 @@ _AVAIL_OUT = ("outofstock", "out_of_stock", "soldout", "sold_out", "discontinued
 @dataclass
 class ProductMetadata:
     ok: bool = False
+    blocked: bool = False  # page was an anti-bot challenge, not the product page
     error: str | None = None
     name: str | None = None
     image_url: str | None = None
@@ -605,6 +606,42 @@ def _from_selectors(soup: BeautifulSoup, meta: ProductMetadata) -> None:
         meta.in_stock = _text_stock(soup)
 
 
+# Anti-bot interstitials that some stores serve with HTTP 200 in place of the
+# product page: Walmart's PerimeterX "Robot or Human?", and the Cloudflare /
+# Incapsula / DataDome equivalents. Without detecting these, the <title> fallback
+# below grabs the challenge heading ("Robot or Human?") as the product name,
+# meta.ok flips True, and import_from_url stops on that junk instead of escalating
+# to the next engine / scrape.do.
+_BLOCK_TITLE_RE = re.compile(
+    r"robot or human|are you (?:a )?(?:human|robot)|access denied|"
+    r"attention required|pardon our interruption|just a moment|security check|"
+    r"verify you are (?:a )?human|request unsuccessful",
+    re.I,
+)
+_BLOCK_MARKERS = (
+    "px-captcha", "/_px/", "perimeterx",          # PerimeterX (Walmart)
+    "cf-chl", "cf_chl", "challenge-platform",       # Cloudflare
+    "_incapsula_resource", "incapsula incident",    # Imperva / Incapsula
+    "captcha-delivery.com", "datadome",             # DataDome
+)
+
+
+def _is_block_page(soup: BeautifulSoup, html: str, meta: ProductMetadata) -> bool:
+    """True when the HTML is an anti-bot challenge rather than a product page.
+
+    Title match is high-signal on its own. Body markers only count when no real
+    price was found, so a legit page that merely embeds a CAPTCHA widget elsewhere
+    is not misflagged.
+    """
+    title = soup.title.string.strip() if (soup.title and soup.title.string) else ""
+    if title and _BLOCK_TITLE_RE.search(title):
+        return True
+    if meta.price is None:
+        low = html.lower()
+        return any(tok in low for tok in _BLOCK_MARKERS)
+    return False
+
+
 def extract_metadata(html: str, url: str) -> ProductMetadata:
     """Pure parser — no network. Returns best-effort product metadata."""
     meta = ProductMetadata(store_name=domain_of(url))
@@ -642,6 +679,12 @@ def extract_metadata(html: str, url: str) -> ProductMetadata:
     if meta.currency:
         meta.currency = (normalize_currency(meta.currency) or meta.currency.strip().upper())[:8]
 
+    if _is_block_page(soup, html or "", meta):
+        meta.blocked = True
+        meta.ok = False
+        meta.error = "The store served an anti-bot challenge instead of the product page."
+        return meta
+
     meta.ok = bool(meta.name)
     if not meta.ok:
         meta.error = "Could not find product details on the page."
@@ -672,6 +715,7 @@ def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
         before_fetch(url)
 
     blocked: int | None = None
+    challenged = False  # a 200 anti-bot interstitial (not an HTTP block status)
     http_err: int | None = None
     last_exc: Exception | None = None
 
@@ -701,12 +745,16 @@ def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
         """scrape.do no-render first, escalating to a headless render only when the
         cheap fetch found no price (a genuinely JS-rendered store). Falls back to a
         name-only result if neither attempt yields a price."""
+        nonlocal challenged
         best = None
         for render in ([None, True] if scrapedo_render_enabled() else [None]):
             resp = _fetch("scrapedo", render=render)
             if resp is None:
                 continue
             m = extract_metadata(resp.text, url)
+            if m.blocked:
+                challenged = True
+                continue
             if m.ok and m.price is not None:
                 return m
             if m.ok and best is None:
@@ -719,6 +767,10 @@ def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
         else:
             resp = _fetch(engine)
             meta = extract_metadata(resp.text, url) if resp is not None else None
+        if meta is not None and meta.blocked:
+            challenged = True
+            log.debug("import: %s served an anti-bot challenge via %s", dom, engine)
+            meta = None  # don't accept a challenge page; try the next engine
         if meta is not None and meta.ok:
             log.debug("import ok via %s: %r price=%s %s", engine, meta.name, meta.price, meta.currency)
             return meta  # has at least a name; good enough to add + monitor
@@ -732,8 +784,9 @@ def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
         " scrape.do API on the Settings page."
     )
 
-    if blocked is not None:
-        msg = f"The store blocked automated access (HTTP {blocked})."
+    if blocked is not None or challenged:
+        where = f"HTTP {blocked}" if blocked is not None else "an anti-bot challenge page"
+        msg = f"The store blocked automated access ({where})."
         if scrapedo_on:
             msg += " scrape.do could not get past it either."
         return ProductMetadata(ok=False, store_name=dom, error=msg + configure_hint)
