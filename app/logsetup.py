@@ -98,8 +98,13 @@ def configure(level_name: str, log_file: str) -> None:
                                          encoding="utf-8")
         fileh.setFormatter(fmt)
         root.addHandler(fileh)
-    except Exception:  # noqa: BLE001 - file logging is best-effort (read-only FS, etc.)
-        pass
+    except Exception as exc:  # noqa: BLE001 - file logging is best-effort (read-only FS, etc.)
+        # Don't crash, but make the failure visible on stdout (the stream handler
+        # is already attached) so an unwritable log dir doesn't silently leave the
+        # Admin → Logs page empty with no clue why.
+        root.warning("File logging disabled: could not write %s (%s). The Admin "
+                     "→ Logs page will be empty until the log directory is "
+                     "writable by the app user.", log_file, exc)
     _configured = True
 
 
