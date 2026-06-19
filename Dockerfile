@@ -24,7 +24,7 @@ COPY . .
 RUN sed -i 's/\r$//' /app/docker/entrypoint.sh \
     && chmod +x /app/docker/entrypoint.sh \
     && adduser --disabled-password --gecos "" appuser \
-    && mkdir -p /data/uploads \
+    && mkdir -p /data/uploads /data/logs \
     && chown -R appuser:appuser /app /data
 USER appuser
 

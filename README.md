@@ -136,13 +136,17 @@ services:
     networks:
       - proxy
     volumes:
-      # Persists app state under /data: uploads (/data/uploads, auto-created)
-      # and logs (/data/app.log, rotated at 2 MB, kept 7 days).
-      - app_data:/data
+      # Persist app state on separate sub-path volumes, not the whole /data
+      # (mounting the parent comes up root-owned and the non-root app can't
+      # write it). uploads (/data/uploads, auto-created) and logs
+      # (/data/logs/app.log, rotated at 2 MB, kept 7 days).
+      - uploads_data:/data/uploads
+      - logs_data:/data/logs
 
 volumes:
   db_data:
-  app_data:
+  uploads_data:
+  logs_data:
 
 networks:
   proxy:
@@ -210,6 +214,9 @@ service to point at your server, then remove the bundled `db` service (and its
   can't be bypassed via the env var (it still disables a broken OIDC, which is
   the actual recovery). See [`ENVIRONMENT.md`](./ENVIRONMENT.md).
 - Log verbosity is set with `LOG_LEVEL` (`fatal`→`trace`) or live in **Admin →
-  Logs**; both web and worker write to `LOG_FILE` (default `/data/app.log`).
+  Logs**; both web and worker write to `LOG_FILE` (default `/data/logs/app.log`).
   The file rotates at 2 MB and rotated files are kept for 7 days, then deleted.
-  Persist them by keeping `/data` on a volume (the bundled compose does this).
+  Persist them by keeping `/data/logs` on a volume (the bundled compose does this).
+  The web process also logs one structured line per HTTP request (client,
+  method, path, status, duration); the Logs page renders these as a sortable,
+  filterable table you can export to CSV.
