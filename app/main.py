@@ -1,7 +1,9 @@
 """FastAPI web entrypoint for PriceOrbit."""
 from __future__ import annotations
 
+import logging
 import os
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -23,6 +25,11 @@ app.include_router(web_router)
 
 _AUTH_EXEMPT = {"/login", "/logout", "/health"}
 _ADMIN_ONLY_PREFIXES = ("/users", "/settings", "/alerts", "/admin")
+
+# Request access log -> shared log file (the Admin → Logs table parses these).
+# Static assets and the health probe are skipped to keep the log readable.
+_access_log = logging.getLogger("access")
+_ACCESS_SKIP = ("/static", "/uploads", "/favicon")
 
 
 @app.on_event("startup")
@@ -70,6 +77,28 @@ async def require_login(request, call_next):
     except Exception:  # noqa: BLE001 — fail open so a settings/DB hiccup can't lock everyone out
         pass
     return await call_next(request)
+
+
+# Added after require_login so it wraps it (last-added middleware is outermost),
+# letting it time and log auth redirects too.
+@app.middleware("http")
+async def access_logging(request, call_next):
+    """Log one structured line per request: ``<client> <method> <path> <status>
+    <duration>ms``. 4xx are WARN, 5xx are ERROR, so the level reflects health."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    path = request.url.path
+    if not path.startswith(_ACCESS_SKIP) and path != "/health":
+        dur_ms = (time.perf_counter() - start) * 1000.0
+        xff = request.headers.get("x-forwarded-for", "")
+        client = xff.split(",")[0].strip() if xff else (
+            request.client.host if request.client else "-")
+        status = response.status_code
+        level = logging.INFO if status < 400 else (
+            logging.WARNING if status < 500 else logging.ERROR)
+        _access_log.log(level, "%s %s %s %d %.1fms",
+                        client, request.method, path, status, dur_ms)
+    return response
 
 
 @app.get("/health")

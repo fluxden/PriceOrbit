@@ -49,13 +49,18 @@ services:
     networks:
       - proxy
     volumes:
-      # Persists app state: uploads (/data/uploads, auto-created) and logs
-      # (/data/app.log, rotated at 2 MB, kept 7 days).
-      - app_data:/data
+      # Persist app state on separate sub-path volumes, not the whole /data.
+      # A named volume keeps the image dir's ownership only when mounted at that
+      # dir; mounting the parent /data comes up root-owned and the non-root app
+      # can't create /data/uploads. uploads (auto-created) + logs (app.log,
+      # rotated at 2 MB, kept 7 days).
+      - uploads_data:/data/uploads
+      - logs_data:/data/logs
 
 volumes:
   db_data:
-  app_data:
+  uploads_data:
+  logs_data:
 
 networks:
   proxy:

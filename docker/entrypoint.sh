@@ -31,7 +31,9 @@ worker_pid=$!
 
 # 4) Start the web server in the background.
 echo "[entrypoint] Starting web server..."
-uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+# --no-access-log: the app emits its own richer access log (with duration) to the
+# shared log file; this avoids duplicate, less-detailed lines on stdout.
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log &
 web_pid=$!
 
 # If either process exits, stop the container with its status.

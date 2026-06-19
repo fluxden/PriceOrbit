@@ -177,22 +177,65 @@ _LEVELNAME_TO_UI = {
     "DEBUG": "DEBUG",
     "TRACE": "TRACE",
 }
-# Matches the level token right after the "<date> <time> " prefix of `_FMT`.
-_LINE_RE = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d[.,]\d+ \[([A-Z]+)\]")
+# A full log entry: "<date> <time> [LEVEL] <logger>: <message>" (see `_FMT`).
+_ENTRY_RE = re.compile(
+    r"^(?P<ts>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d[.,]\d+) "
+    r"\[(?P<level>[A-Z]+)\] (?P<name>[^:]+): (?P<msg>.*)$"
+)
+# An access-log message body: "<client> <method> <path> <status> <duration>".
+_ACCESS_RE = re.compile(
+    r"^(?P<client>\S+) (?P<method>[A-Z]+) (?P<path>\S+) "
+    r"(?P<status>\d{3}) (?P<dur>[\d.]+ms)$"
+)
 
 
-def classify(lines: list[str]) -> list[tuple[str, str]]:
-    """Tag each raw line with its UI level bucket.
+def _ts_num(ts_raw: str) -> int:
+    """Turn a "2026-06-18 12:34:56,789" stamp into a sortable int (to seconds)."""
+    digits = re.sub(r"\D", "", ts_raw or "")
+    return int(digits[:14]) if len(digits) >= 14 else 0
 
-    Continuation lines (tracebacks, wrapped messages) carry the level of the
-    entry they belong to so a filter keeps them with their parent line. Lines
-    before any recognizable entry fall back to ``OTHER``.
+
+def _blank_row(**over) -> dict:
+    row = {"cont": False, "kind": "msg", "level": "OTHER", "time": "", "ts": 0,
+           "source": "", "client": "", "method": "", "path": "", "status": "",
+           "duration": "", "message": "", "raw": ""}
+    row.update(over)
+    return row
+
+
+def parse_groups(lines: list[str]) -> list[list[dict]]:
+    """Parse raw log lines into entry *groups* for the Logs table.
+
+    Each group is a list of row dicts: the first is the primary entry, followed
+    by any continuation lines (tracebacks, wrapped output). Grouping keeps those
+    continuations attached to their entry when the table is sorted. Access-log
+    entries (logger ``access``) are split into client/method/path/status/duration
+    columns; everything else is a plain message row.
     """
-    out: list[tuple[str, str]] = []
-    last = "OTHER"
+    groups: list[list[dict]] = []
+    last_level, last_ts = "OTHER", 0
     for line in lines:
-        m = _LINE_RE.match(line)
+        m = _ENTRY_RE.match(line)
         if m:
-            last = _LEVELNAME_TO_UI.get(m.group(1), "OTHER")
-        out.append((last, line))
-    return out
+            level = _LEVELNAME_TO_UI.get(m.group("level"), "OTHER")
+            ts_num = _ts_num(m.group("ts"))
+            last_level, last_ts = level, ts_num
+            name, msg = m.group("name"), m.group("msg")
+            row = _blank_row(level=level, time=m.group("ts"), ts=ts_num,
+                             source=name, raw=line)
+            acc = _ACCESS_RE.match(msg) if name.strip() == "access" else None
+            if acc:
+                row.update(kind="access", client=acc.group("client"),
+                           method=acc.group("method"), path=acc.group("path"),
+                           status=acc.group("status"), duration=acc.group("dur"))
+            else:
+                row["message"] = msg   # logger name shown in its own Source column
+            groups.append([row])
+        else:
+            row = _blank_row(cont=True, kind="cont", level=last_level,
+                             ts=last_ts, message=line, raw=line)
+            if groups:
+                groups[-1].append(row)
+            else:
+                groups.append([row])
+    return groups

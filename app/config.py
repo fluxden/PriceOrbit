@@ -87,7 +87,7 @@ class Settings(BaseSettings):
     # persists to the database and overrides this). Both the web and worker
     # processes write to log_file so the Logs page can show their combined output.
     log_level: str = "info"   # fatal | error | warn | info | debug | trace
-    log_file: str = "/data/app.log"
+    log_file: str = "/data/logs/app.log"
 
     # Notifications (optional; configured later via the Alerts page / env)
     smtp_host: str = ""

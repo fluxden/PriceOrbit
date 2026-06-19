@@ -1553,18 +1553,23 @@ def admin_logs(request: Request, db: Session = Depends(get_db),
     names = [f["name"] for f in available]
     selected = [n for n in (files or []) if n in names] or names[:1]   # default: live file
     entries = logsetup.read_selected(settings.log_file, selected, lines)
-    tagged = list(reversed(logsetup.classify(entries)))   # newest first
-    present = [lvl for lvl in (logsetup.UI_LEVELS + ["OTHER"])
-               if any(t[0] == lvl for t in tagged)]
+    groups = logsetup.parse_groups(entries)
+    groups.reverse()                            # newest entries first
+    # Always show the standard level chips; append TRACE/OTHER only when present
+    # so those lines aren't silently un-filterable (and thus hidden).
+    seen_levels = {r["level"] for g in groups for r in g}
+    base_chips = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"]
+    extra_chips = [lvl for lvl in ("TRACE", "OTHER") if lvl in seen_levels]
+    present = base_chips + extra_chips
     ctx = _base_context(request, "admin")
     ctx.update({
         "log_level": level,
         "level_names": logsetup.LEVEL_NAMES,
-        "log_entries": tagged,                  # (level, text), newest first
+        "log_groups": groups,                   # entry groups, newest first
         "log_levels": present,                  # levels present, for filter chips
         "log_files": available,                 # available files, for the selector
         "selected_files": selected,
-        "log_count": len(tagged),
+        "log_count": sum(len(g) for g in groups),
         "lines": lines,
         "log_file": settings.log_file,
         "current_user": auth.current_user(request, db),
