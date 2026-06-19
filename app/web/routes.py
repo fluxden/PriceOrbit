@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
 
+import logging
 import os
 import secrets
 
@@ -181,7 +182,10 @@ def _base_context(request: Request, active: str) -> dict:
         finally:
             _db.close()
     except Exception:  # noqa: BLE001 — cosmetic/auth context must never block a page
-        pass
+        # Don't crash the page, but don't swallow silently either: a logged
+        # error here (e.g. a missing-column schema mismatch) is the difference
+        # between a diagnosable problem and a "nothing happened" mystery.
+        logging.getLogger("auth").exception("base context: loading user/theme context failed")
     # Profile is reached from the user bubble menu, not the sidebar. Non-admins
     # only see the monitoring pages.
     nav = NAV_ITEMS
