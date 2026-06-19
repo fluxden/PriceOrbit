@@ -99,14 +99,14 @@
 
   <div class="controls-row">
     <label class="switch">
-      <input type="checkbox" name="scrapedo_enabled" value="1" {{ 'checked' if cfg.scrapedo_enabled_b }} />
+      <input type="checkbox" name="scrapedo_enabled" id="scrapedo_enabled" value="1" {{ 'checked' if cfg.scrapedo_enabled_b }} />
       <span><strong>Enable scrape.do</strong><span class="field__hint">When on and a token is saved, it's used as a last-resort engine for blocked stores.</span></span>
     </label>
   </div>
 
   <div class="detail-grid">
     <div class="field"><label>API token</label>
-      <input type="password" name="scrapedo_token" autocomplete="off" placeholder="{{ '•••••• (unchanged)' if cfg.scrapedo_token_is_set else 'not set' }}" />
+      <input type="password" name="scrapedo_token" id="scrapedo_token" autocomplete="off" placeholder="{{ '•••••• (unchanged)' if cfg.scrapedo_token_is_set else 'not set' }}" />
     </div>
     <div class="field"><label>Proxy country <span class="field__opt">(geoCode)</span></label>
       <input type="text" name="scrapedo_geo" value="{{ cfg.scrapedo_geo }}" placeholder="US" maxlength="2" autocomplete="off" />
@@ -126,6 +126,19 @@
   <p class="field__hint">scrape.do is tried without render first (~10 credits); render is only added when the no-render fetch finds no price, costing ~25. The free tier is 1,000/mo — set monthly credits to match your plan so the usage meter below is accurate.</p>
   <div class="form-actions"><button class="btn btn--primary" type="submit">Save scraping API</button></div>
 </form>
+<script>
+  // Typing a token implies you want the engine on — auto-check Enable so a saved
+  // token isn't left silently inert. Server enforces this too on save.
+  (function () {
+    var tok = document.getElementById('scrapedo_token');
+    var en = document.getElementById('scrapedo_enabled');
+    if (tok && en) {
+      tok.addEventListener('input', function () {
+        if (tok.value.trim()) { en.checked = true; }
+      });
+    }
+  })();
+</script>
 
 <!-- scrape.do usage — only when a token is configured -->
 {% if scrapedo %}
