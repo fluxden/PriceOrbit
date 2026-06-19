@@ -106,7 +106,7 @@ services:
       MARIADB_PASSWORD: CHANGE_ME
       MARIADB_ROOT_PASSWORD: CHANGE_ME
     volumes:
-      - db_data:/var/lib/mysql
+      - /app/priceorbit/db:/var/lib/mysql
     networks:
       - proxy
     healthcheck:
@@ -136,17 +136,11 @@ services:
     networks:
       - proxy
     volumes:
-      # Persist app state on separate sub-path volumes, not the whole /data
-      # (mounting the parent comes up root-owned and the non-root app can't
-      # write it). uploads (/data/uploads, auto-created) and logs
-      # (/data/logs/app.log, rotated at 2 MB, kept 7 days).
-      - uploads_data:/data/uploads
-      - logs_data:/data/logs
+      - /app/priceorbit/app:/data
 
 volumes:
-  db_data:
-  uploads_data:
-  logs_data:
+  db:
+  app:
 
 networks:
   proxy:
@@ -155,10 +149,21 @@ networks:
 
 **2. Set the secrets.** Replace every `CHANGE_ME` before deploying:
 
-- `APP_SECRET` — a long random string.
+- `APP_SECRET` — a long random string (signs session cookies; changing it later
+  signs everyone out).
 - `DB_PASSWORD` — must match in **both** the `db` and `app` services.
 - `MARIADB_PASSWORD` — same value as `DB_PASSWORD`.
 - `MARIADB_ROOT_PASSWORD` — a different strong value.
+
+Generate a strong `APP_SECRET` (use the same commands for the DB passwords):
+
+```bash
+# OpenSSL (available on most Linux/macOS hosts)
+openssl rand -base64 48
+
+# or Python 3
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+```
 
 **3. Start it:**
 
@@ -175,40 +180,33 @@ left side of `8800:8000` to publish a different host port.
 
 ## Storage and permissions
 
-The `app` container runs as a **non-root user (`appuser`, uid/gid `1000`)**, so
-anywhere it persists data must be **writable by uid 1000** — not a root-owned
-directory.
+All persistent state lives under one host directory, set by `DATA_ROOT`
+(default `/app/priceorbit`):
 
-- **Named volumes (the bundled compose) — nothing to do.** A fresh named volume
-  is seeded from the matching directory in the image (`/data/uploads`,
-  `/data/logs`), which is owned by `appuser`, so the volume inherits that
-  ownership and is writable. This is why the compose mounts `uploads_data` and
-  `logs_data` at those two paths.
-- **Mount each path to its own volume — never the parent `/data`.** Mounting a
-  named volume over the parent `/data` comes up **root-owned** (there is no
-  pre-owned image dir to seed it), and the app then can't create `/data/uploads`
-  — startup fails with `PermissionError: '/data/uploads'`.
-- **Bind mounts need a chown first.** Unlike named volumes, a host bind mount
-  keeps the host directory's existing owner — Docker does **not** copy the
-  image's ownership. Create a **dedicated** directory per mount and give it to
-  uid 1000 *before* the first start:
+- `${DATA_ROOT}/db`  → MariaDB data dir (mounted at `/var/lib/mysql`)
+- `${DATA_ROOT}/app` → app uploads + logs (mounted at `/data`)
 
-  ```bash
-  mkdir -p /srv/priceorbit/uploads /srv/priceorbit/logs
-  sudo chown -R 1000:1000 /srv/priceorbit/uploads /srv/priceorbit/logs
-  ```
-  ```yaml
-      volumes:
-        - /srv/priceorbit/uploads:/data/uploads
-        - /srv/priceorbit/logs:/data/logs
-  ```
-  Don't point a bind mount at a root-owned system path (e.g. `/etc/...`), and
-  don't mount one shared directory at several container paths or share it with
-  the database's data dir — give uploads, logs, and the DB each their own.
+**Nothing to chown by hand.** Both containers start their entrypoints as root
+and fix ownership before dropping privileges:
+
+- The `app` image runs as a **non-root user (`appuser`, uid/gid `1000`)**, but
+  its entrypoint (still root) creates `/data/uploads` and `/data/logs`,
+  `chown -R`s `/data` to uid 1000, then re-execs the app as `appuser`. So a
+  root-owned bind dir at `/data` is fine — unlike the old setup you do **not**
+  need to mount each sub-path separately or pre-`chown` anything.
+- MariaDB's entrypoint likewise chowns its datadir to the `mysql` user, so its
+  bind dir can stay root-owned too. Don't set `user:` on the `db` service.
+
+Give each service its own directory — don't point `app` and `db` at the same
+path, and don't reuse a root-owned system path (e.g. `/etc/...`). To put state
+somewhere other than `/app/priceorbit`, set `DATA_ROOT` (e.g. in a `.env` file
+next to the compose file, or `DATA_ROOT=/srv/priceorbit docker compose up -d`).
 
 **Symptom of a non-writable log dir:** the Admin → Logs page stays empty and
 `docker logs <app>` shows `File logging disabled: ... Permission denied`. Uploads
-fail the same way. Fix the directory's ownership (uid 1000) and restart.
+fail the same way. The entrypoint self-heals ownership, so this normally means
+`DATA_ROOT` sits on a read-only mount or a filesystem the chown can't touch (e.g.
+some NFS/SMB shares) — move it to a normal local path and restart.
 
 ## Required environment variables
 

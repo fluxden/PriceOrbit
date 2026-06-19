@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <link rel="icon" href="/static/img/logo.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_v }}" />
   {% if theme_style %}<style id="theme-overrides">:root{ {{ theme_style }} } html[data-theme="dark"]{ {{ theme_style }} }</style>{% endif %}
   <script>
     /* Set theme before paint to avoid a flash. */
@@ -115,6 +115,6 @@
   </div>
 </div>
 
-<script src="/static/js/app.js" defer></script>
+<script src="/static/js/app.js?v={{ asset_v }}" defer></script>
 </body>
 </html>

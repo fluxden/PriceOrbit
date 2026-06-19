@@ -10,6 +10,7 @@ from urllib.parse import quote, urlencode, urlparse
 import logging
 import os
 import secrets
+import time
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -46,6 +47,12 @@ from app.services.product_detail import (
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+# Cache-busting token for static CSS/JS. Recomputed each process start, so a
+# redeploy/restart forces browsers (and any caching reverse proxy) to fetch the
+# new files instead of serving stale assets against freshly-rendered HTML — the
+# cause of "new bubble markup, dead old dropdown JS" after an upgrade.
+_ASSET_V = str(int(time.time()))
 
 
 @pass_context
@@ -197,7 +204,8 @@ def _base_context(request: Request, active: str) -> dict:
     return {"request": request, "app_name": settings.app_name, "active": active,
             "nav_items": nav, "theme_style": theme_style, "theme_base": theme_base,
             "current_user": cur_user, "login_enabled": login_on, "time_format": time_format,
-            "timezone": tz_name, "date_format": date_format, "bubble": bubble}
+            "timezone": tz_name, "date_format": date_format, "bubble": bubble,
+            "asset_v": _ASSET_V}
 
 
 def _sorted(rows: list, sort: str) -> list:
@@ -918,7 +926,7 @@ def test_alert(account_id: int, db: Session = Depends(get_db)):
 # ----------------------------- Placeholders -----------------------------
 
 @router.post("/settings/security/admin")
-def create_admin(db: Session = Depends(get_db), username: str = Form(""),
+def create_admin(request: Request, db: Session = Depends(get_db), username: str = Form(""),
                  password: str = Form(""), confirm: str = Form("")):
     if auth.admin_exists(db):
         return RedirectResponse("/admin?error=An+admin+already+exists", status_code=303)
@@ -931,9 +939,17 @@ def create_admin(db: Session = Depends(get_db), username: str = Form(""),
         return RedirectResponse("/admin?error=Passwords+do+not+match", status_code=303)
     if auth.get_user_by_username(db, username):
         return RedirectResponse("/admin?error=That+username+is+taken", status_code=303)
-    auth.create_user(db, username, password, role="admin")
+    admin = auth.create_user(db, username, password, role="admin")
     audit.log(db, "admin.created", actor="system", detail=f"username={username}")
-    return RedirectResponse("/admin?msg=Admin+created.+You+can+now+enable+login.", status_code=303)
+    # The app now has an account to protect, so turn sign-in on and send the
+    # user straight to the login page. Previously this left login disabled and
+    # stayed on /admin, so to the user "nothing happened". Existing single-user
+    # products are claimed by this first admin (same as the manual toggle).
+    settings_store.set_values(db, {"login_enabled": "1"})
+    db.execute(update(Product).where(Product.user_id.is_(None)).values(user_id=admin.id))
+    db.commit()
+    _audit(request, db, "login.enabled", detail="auto-enabled on first admin")
+    return RedirectResponse("/login", status_code=303)
 
 
 @router.post("/settings/security/login")
@@ -953,6 +969,33 @@ def toggle_login(request: Request, db: Session = Depends(get_db), login_enabled:
     _audit(request, db, "login.enabled" if enabling else "login.disabled")
     state = "enabled" if enabling else "disabled"
     return RedirectResponse(f"/admin?msg=Login+{state}", status_code=303)
+
+
+# Custom-length units offered in the dropdown, in seconds.
+_SESSION_UNITS = {"minutes": 60, "hours": 3600, "days": 86400}
+
+
+@router.post("/settings/security/session")
+def save_session_lifetime(request: Request, db: Session = Depends(get_db),
+                          session_lifetime: str = Form("1209600"),
+                          custom_value: str = Form(""), custom_unit: str = Form("hours")):
+    """Persist how long a sign-in stays valid. Applies to sessions created after."""
+    if session_lifetime == "custom":
+        try:
+            n = int(custom_value)
+        except (TypeError, ValueError):
+            n = 0
+        if n < 1:
+            return RedirectResponse("/admin?error=Enter+a+custom+length+of+at+least+1", status_code=303)
+        secs = n * _SESSION_UNITS.get(custom_unit, 3600)
+    else:
+        try:
+            secs = max(int(session_lifetime), 0)   # 0 = never
+        except (TypeError, ValueError):
+            secs = auth.SESSION_MAX_AGE
+    settings_store.set_values(db, {"session_lifetime": str(secs)})
+    _audit(request, db, "session.lifetime_changed", detail=("never" if secs == 0 else f"{secs}s"))
+    return RedirectResponse("/admin?msg=Session+length+saved", status_code=303)
 
 
 @router.post("/settings/security/oidc")
@@ -1058,7 +1101,7 @@ def _login_context(request: Request, db: Session, **extra) -> dict:
         "allow_local_login": cfg.get("allow_local_login", "1") == "1",
         "oidc_enabled": cfg.get("oidc_enabled", "0") == "1",
         "oidc_provider_name": cfg.get("oidc_provider_name") or "SSO",
-        "next": "/", "error": None,
+        "next": "/", "error": None, "asset_v": _ASSET_V,
     }
     ctx.update(extra)
     return ctx
@@ -1088,8 +1131,7 @@ def login_submit(request: Request, db: Session = Depends(get_db), username: str 
     db.commit()
     audit.log(db, "login.success", actor=user.username, ip=_client_ip(request))
     resp = RedirectResponse(target, status_code=303)
-    resp.set_cookie(auth.SESSION_COOKIE, auth.sign_session({"uid": user.id, "role": user.role}),
-                    max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax")
+    auth.issue_session_cookie(resp, db, user)
     return resp
 
 
@@ -1183,8 +1225,7 @@ def oidc_callback(request: Request, db: Session = Depends(get_db),
     db.commit()
     audit.log(db, "login.success", actor=user.username, detail="via SSO", ip=_client_ip(request))
     resp = RedirectResponse(_safe_next(data.get("next", "/")), status_code=303)
-    resp.set_cookie(auth.SESSION_COOKIE, auth.sign_session({"uid": user.id, "role": user.role}),
-                    max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax")
+    auth.issue_session_cookie(resp, db, user)
     resp.delete_cookie(OIDC_COOKIE)
     return resp
 
@@ -1530,10 +1571,27 @@ def settings_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse(request, "settings.html", ctx)
 
 
+def _session_custom_fields(secs: int) -> tuple[int, str]:
+    """Pick the friendliest whole-number (value, unit) for a custom lifetime."""
+    if secs % 86400 == 0:
+        return secs // 86400, "days"
+    if secs % 3600 == 0:
+        return secs // 3600, "hours"
+    return max(secs // 60, 1), "minutes"
+
+
 @router.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request, db: Session = Depends(get_db),
                msg: str | None = None, error: str | None = None):
     cfg = settings_store.get_public(db)
+    # Decide whether the stored lifetime matches a preset or needs the custom row.
+    preset_vals = {v for v, _ in settings_store.SESSION_LIFETIMES}
+    cur_secs = cfg.get("session_lifetime", "1209600")
+    session_is_custom = cur_secs not in preset_vals
+    try:
+        custom_value, custom_unit = _session_custom_fields(int(cur_secs))
+    except (TypeError, ValueError):
+        custom_value, custom_unit = 24, "hours"
     ctx = _base_context(request, "admin")
     ctx.update({
         "cfg": cfg,
@@ -1541,6 +1599,9 @@ def admin_page(request: Request, db: Session = Depends(get_db),
         "admin_exists": auth.admin_exists(db),
         "login_locked": settings_store.login_type_override(db),
         "current_user": auth.current_user(request, db),
+        "session_lifetimes": settings_store.SESSION_LIFETIMES,
+        "session_is_custom": session_is_custom,
+        "session_custom_value": custom_value, "session_custom_unit": custom_unit,
         "flash_msg": msg, "flash_error": error,
     })
     return templates.TemplateResponse(request, "admin.html", ctx)
