@@ -100,13 +100,11 @@
           {% elif r.cont %}
           <td class="lt-time"></td>
           <td class="lt-level"></td>
-          <td class="lt-source"></td>
-          <td class="lt-msg lt-msg--cont" colspan="5">{{ r.message }}</td>
+          <td class="lt-msg lt-msg--cont" colspan="6">{{ r.message }}</td>
           {% else %}
           <td class="lt-time">{{ r.time }}</td>
           <td class="lt-level"><span class="lvl lvl--{{ r.level|lower }}">{{ r.level }}</span></td>
-          <td class="lt-source">{{ r.source }}</td>
-          <td class="lt-msg" colspan="5">{{ r.message }}</td>
+          <td class="lt-msg" colspan="6"><span class="lt-src">{{ r.source }}</span>{{ r.message }}</td>
           {% endif %}
         </tr>
         {% endfor %}{% endfor %}
