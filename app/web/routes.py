@@ -1759,9 +1759,15 @@ def save_scrapedo(db: Session = Depends(get_db),
             raise ValueError
     except (TypeError, ValueError):
         credits = settings.scrapedo_monthly_credits
+    # Entering a token implies you want the engine on: a saved-but-disabled token
+    # is silently inert (the common setup mistake). So default Enable on whenever a
+    # token is provided. To keep a token but disable, leave the field blank (which
+    # keeps the stored token) and uncheck the box.
+    token = scrapedo_token.strip()
+    enabled = bool(scrapedo_enabled) or bool(token)
     settings_store.set_values(db, {
-        "scrapedo_enabled": "1" if scrapedo_enabled else "0",
-        "scrapedo_token": scrapedo_token.strip(),  # secret; blank keeps the saved one
+        "scrapedo_enabled": "1" if enabled else "0",
+        "scrapedo_token": token,  # secret; blank keeps the saved one
         "scrapedo_render": "1" if scrapedo_render else "0",
         "scrapedo_super": "1" if scrapedo_super else "0",
         "scrapedo_geo": scrapedo_geo.strip().upper(),
