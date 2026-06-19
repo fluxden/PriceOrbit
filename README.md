@@ -173,6 +173,43 @@ left side of `8800:8000` to publish a different host port.
 
 **To update:** `docker compose pull && docker compose up -d`.
 
+## Storage and permissions
+
+The `app` container runs as a **non-root user (`appuser`, uid/gid `1000`)**, so
+anywhere it persists data must be **writable by uid 1000** — not a root-owned
+directory.
+
+- **Named volumes (the bundled compose) — nothing to do.** A fresh named volume
+  is seeded from the matching directory in the image (`/data/uploads`,
+  `/data/logs`), which is owned by `appuser`, so the volume inherits that
+  ownership and is writable. This is why the compose mounts `uploads_data` and
+  `logs_data` at those two paths.
+- **Mount each path to its own volume — never the parent `/data`.** Mounting a
+  named volume over the parent `/data` comes up **root-owned** (there is no
+  pre-owned image dir to seed it), and the app then can't create `/data/uploads`
+  — startup fails with `PermissionError: '/data/uploads'`.
+- **Bind mounts need a chown first.** Unlike named volumes, a host bind mount
+  keeps the host directory's existing owner — Docker does **not** copy the
+  image's ownership. Create a **dedicated** directory per mount and give it to
+  uid 1000 *before* the first start:
+
+  ```bash
+  mkdir -p /srv/priceorbit/uploads /srv/priceorbit/logs
+  sudo chown -R 1000:1000 /srv/priceorbit/uploads /srv/priceorbit/logs
+  ```
+  ```yaml
+      volumes:
+        - /srv/priceorbit/uploads:/data/uploads
+        - /srv/priceorbit/logs:/data/logs
+  ```
+  Don't point a bind mount at a root-owned system path (e.g. `/etc/...`), and
+  don't mount one shared directory at several container paths or share it with
+  the database's data dir — give uploads, logs, and the DB each their own.
+
+**Symptom of a non-writable log dir:** the Admin → Logs page stays empty and
+`docker logs <app>` shows `File logging disabled: ... Permission denied`. Uploads
+fail the same way. Fix the directory's ownership (uid 1000) and restart.
+
 ## Required environment variables
 
 The compose file lists every variable inline. The ones you must change from

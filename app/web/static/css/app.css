@@ -638,6 +638,9 @@ button { font-family: inherit; cursor: pointer; }
 .lt-path { word-break: break-all; }
 .lt-msg { white-space: pre-wrap; word-break: break-word; }
 .lt-msg--cont { color: var(--text-muted); }
+/* Logger name shown inline before a message (non-access rows span Source→end,
+   so the source rides in the message cell instead of its own column). */
+.lt-src { color: var(--text-muted); white-space: nowrap; margin-right: 12px; }
 
 /* Level bubble */
 .lvl { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .68rem; font-weight: 700; letter-spacing: .02em; }
@@ -734,15 +737,16 @@ button { font-family: inherit; cursor: pointer; }
 .rule__actions { display: flex; gap: 6px; }
 .rule-add { border-top: 1px solid var(--border); padding-top: 14px; display: flex; flex-direction: column; gap: 14px; }
 
-/* Alert history */
+/* Alert history. Scoped to .alert-log: the Logs table also uses .logrow (on its
+   <tr>), and an unscoped `display:flex` here would break that table's columns. */
 .alert-log { display: flex; flex-direction: column; gap: 6px; }
-.logrow { display: flex; align-items: center; gap: 10px; font-size: .85rem; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.logrow__icon { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; flex: none; }
-.logrow__icon.is-ok { background: var(--good-weak); color: var(--good); }
-.logrow__icon.is-bad { background: var(--bad-weak); color: var(--bad); }
-.logrow__when { font-family: var(--mono); color: var(--text-muted); }
-.logrow__ch { text-transform: uppercase; font-size: .7rem; color: var(--text-muted); }
-.logrow__msg { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alert-log .logrow { display: flex; align-items: center; gap: 10px; font-size: .85rem; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.alert-log .logrow__icon { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; flex: none; }
+.alert-log .logrow__icon.is-ok { background: var(--good-weak); color: var(--good); }
+.alert-log .logrow__icon.is-bad { background: var(--bad-weak); color: var(--bad); }
+.alert-log .logrow__when { font-family: var(--mono); color: var(--text-muted); }
+.alert-log .logrow__ch { text-transform: uppercase; font-size: .7rem; color: var(--text-muted); }
+.alert-log .logrow__msg { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .btn.is-danger, button.is-danger { color: var(--bad); }
 .btn.is-danger:hover { background: var(--bad-weak); }
@@ -930,7 +934,9 @@ a.login-sso:not(.btn--primary) { background: var(--surface); border: 1px solid v
 a.login-sso:not(.btn--primary):hover { background: var(--surface-hover); }
 
 /* ============ Product detail: full-width banner layout ============ */
-.content:has(.detail-page) { max-width: none; }
+/* Logs page also runs full-width (form-card--wide is logs-only) so the wide
+   log table has room for all its columns. */
+.content:has(.detail-page), .content:has(.form-card--wide) { max-width: none; }
 .detail-page { display: flex; flex-direction: column; gap: 20px; }
 .detail-page > .page-head { margin-bottom: 0; }
 .detail-page .form-card { max-width: none; }

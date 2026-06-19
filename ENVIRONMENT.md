@@ -27,6 +27,14 @@ file, which the **Admin → Logs** page tails. The level is also editable at
 runtime there (it persists to the database and overrides `LOG_LEVEL`); a runtime
 change applies to the web app immediately and to the worker within ~5 minutes.
 
+> **The log directory must be writable by the app user (uid 1000).** The
+> container runs as non-root, so file logging is best-effort: if `LOG_FILE`'s
+> directory isn't writable it is **silently skipped** and the Logs page stays
+> empty — `docker logs` shows `File logging disabled: ... Permission denied`. With
+> a bind mount, `chown 1000:1000` the host directory first; named volumes inherit
+> the image's `appuser` ownership automatically. See **Storage and permissions**
+> in [`README.md`](./README.md).
+
 | Variable | Description | Default | Possible values | Required |
 | --- | --- | --- | --- | --- |
 | `LOG_LEVEL` | Initial log level. Lower levels log more (DEBUG/TRACE include each scrape attempt). | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace`. | |
