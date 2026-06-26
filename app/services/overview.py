@@ -85,7 +85,9 @@ class OverviewRow:
     currency: str | None = None
     best_store: str | None = None
     store_count: int = 0
-    in_stock: bool = False
+    in_stock: bool = False           # ONLINE availability (drives the Online bubble)
+    instore_in_stock: bool = False   # in-store availability (drives the In-store bubble)
+    has_instore: bool = False        # any listing reports an in-store signal
     recently_restocked: bool = False
     change_pct: float | None = None
     change_dir: str = "none"  # down | up | flat | none
@@ -98,6 +100,7 @@ class OverviewRow:
     status: str = "ok"   # monitoring health: ok | stale | failing | paused | off | new
     failing: bool = False
     stale: bool = False
+    uses_api: bool = False  # an active listing's last check went through scrape.do (paid)
 
 
 def _winning_url(urls: list[ProductURL]) -> ProductURL | None:
@@ -146,6 +149,8 @@ def build_rows(db: Session, monitor: str | None = None, owner_id: int | None = N
 
         win = _winning_url(p.urls)
         in_stock = any(bool(u.last_in_stock) for u in p.urls)
+        instore_in_stock = any(bool(u.last_instore_in_stock) for u in p.urls)
+        has_instore = any(u.last_instore_in_stock is not None for u in p.urls)
         paused = bool(p.urls) and all(not u.active for u in p.urls)
         checks = [u.last_checked_at for u in p.urls if u.last_checked_at]
         last_checked = max(checks) if checks else None
@@ -196,6 +201,8 @@ def build_rows(db: Session, monitor: str | None = None, owner_id: int | None = N
                 best_store=(win.store_name or win.domain) if win else None,
                 store_count=len(p.urls),
                 in_stock=in_stock,
+                instore_in_stock=instore_in_stock,
+                has_instore=has_instore,
                 recently_restocked=restocked,
                 change_pct=change_pct,
                 change_dir=change_dir,
@@ -210,6 +217,7 @@ def build_rows(db: Session, monitor: str | None = None, owner_id: int | None = N
                 status=hs.status,
                 failing=hs.failing,
                 stale=hs.stale,
+                uses_api=any(u.last_engine == "scrapedo" for u in active_urls),
             )
         )
     return rows

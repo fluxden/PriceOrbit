@@ -38,7 +38,10 @@ _TRIGGER_LABELS = {
     AlertType.PRICE_INCREASE_ANY: "Any price increase",
     AlertType.PRICE_INCREASE_AMOUNT: "Increases by amount",
     AlertType.PRICE_INCREASE_PERCENT: "Increases by percent",
+    AlertType.PRICE_CHANGE_ANY: "Any price change",
     AlertType.BACK_IN_STOCK: "Back in stock",
+    AlertType.OUT_OF_STOCK: "Out of stock",
+    AlertType.STOCK_CHANGE_ANY: "Any stock change",
 }
 
 
@@ -62,7 +65,10 @@ def _trigger_threshold_display(rule: AlertRule, currency: str | None) -> str:
 @dataclass
 class ProductDetail:
     product: Product
-    in_stock: bool = False
+    in_stock: bool = False           # ONLINE availability (drives the Online bubble)
+    instore_in_stock: bool = False   # in-store availability (drives the In-store bubble)
+    has_instore: bool = False        # any listing reports an in-store signal
+    uses_api: bool = False  # an active listing's last check went through scrape.do (paid)
     currency: str | None = None
     mixed_currency: bool = False
     stores: list[dict] = field(default_factory=list)
@@ -92,6 +98,9 @@ def build_detail(db: Session, product: Product, time_format: str = "24",
                        (Counter(currencies).most_common(1)[0][0] if currencies else None))
     detail.mixed_currency = len(set(currencies)) > 1
     detail.in_stock = any(bool(u.last_in_stock) for u in urls)
+    detail.instore_in_stock = any(bool(u.last_instore_in_stock) for u in urls)
+    detail.has_instore = any(u.last_instore_in_stock is not None for u in urls)
+    detail.uses_api = any(u.last_engine == "scrapedo" for u in urls if u.active)
     detail.target_price = product.target_price
     detail.target_value = float(product.target_price) if product.target_price is not None else None
 
@@ -117,7 +126,8 @@ def build_detail(db: Session, product: Product, time_format: str = "24",
             "color": SERIES_COLORS[i % len(SERIES_COLORS)],
             "is_primary": u.is_primary, "active": u.active, "currency": u.currency,
             "last_price": u.last_price, "last_price_display": format_price(u.last_price, u.currency),
-            "last_in_stock": u.last_in_stock, "last_checked_at": u.last_checked_at,
+            "last_in_stock": u.last_in_stock, "last_instore_in_stock": u.last_instore_in_stock,
+            "last_checked_at": u.last_checked_at,
             "schedule_label": sched_label, "schedule_override": is_override,
             "schedule_kind": u.schedule_kind or "", "check_interval_minutes": u.check_interval_minutes,
             "daily_check_time": u.daily_check_time or "",
@@ -232,7 +242,10 @@ TRIGGER_CHOICES = [
     (AlertType.PRICE_BELOW_TARGET, "Price at or below target ($)", "money"),
     (AlertType.PRICE_INCREASE_ANY, "Price increases (any amount)", ""),
     (AlertType.PRICE_INCREASE_PERCENT, "Price increases by at least (%)", "percent"),
+    (AlertType.PRICE_CHANGE_ANY, "Price changes (up or down)", ""),
     (AlertType.BACK_IN_STOCK, "Back in stock", ""),
+    (AlertType.OUT_OF_STOCK, "Out of stock", ""),
+    (AlertType.STOCK_CHANGE_ANY, "Any stock change", ""),
 ]
 MONEY_TRIGGERS = {AlertType.PRICE_DROP_AMOUNT, AlertType.PRICE_BELOW_TARGET}
 PERCENT_TRIGGERS = {AlertType.PRICE_DROP_PERCENT, AlertType.PRICE_INCREASE_PERCENT}

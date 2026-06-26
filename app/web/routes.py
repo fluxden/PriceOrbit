@@ -116,7 +116,10 @@ CONDITION_CHOICES = [
     ("any_drop", "Any price drop"),
     ("below_target", "Price below target"),
     ("drop_percent", "Price drops by ≥ X%"),
+    ("price_change", "Any price change (up or down)"),
     ("back_in_stock", "Back in stock"),
+    ("out_of_stock", "Out of stock"),
+    ("stock_change", "Any stock change"),
     ("none", "No alert for now"),
 ]
 NAV_ITEMS = [
@@ -537,7 +540,10 @@ def _attach_alerts(db, product, condition, percent, target_price, account_ids):
         "any_drop": (AlertType.PRICE_DROP_ANY, None),
         "below_target": (AlertType.PRICE_BELOW_TARGET, _parse_decimal(target_price)),
         "drop_percent": (AlertType.PRICE_DROP_PERCENT, _parse_decimal(percent)),
+        "price_change": (AlertType.PRICE_CHANGE_ANY, None),
         "back_in_stock": (AlertType.BACK_IN_STOCK, None),
+        "out_of_stock": (AlertType.OUT_OF_STOCK, None),
+        "stock_change": (AlertType.STOCK_CHANGE_ANY, None),
     }
     if condition not in type_map:
         return
@@ -1957,9 +1963,13 @@ def add_store(product_id: int, request: Request, db: Session = Depends(get_db), 
     if meta.ok and meta.price is not None:
         pu.baseline_price = pu.last_price = meta.price
         pu.last_in_stock = meta.in_stock
+        pu.last_instore_in_stock = meta.instore_in_stock
+        pu.last_engine = meta.engine
         pu.last_checked_at = datetime.utcnow()
         pu.price_history.append(PriceHistory(price=meta.price, currency=pu.currency,
-                                             in_stock=bool(meta.in_stock), checked_at=datetime.utcnow()))
+                                             in_stock=bool(meta.in_stock),
+                                             instore_in_stock=meta.instore_in_stock,
+                                             checked_at=datetime.utcnow()))
     p.urls.append(pu)
     db.commit()
     return _detail_redirect(product_id, msg="Store added")
@@ -2042,7 +2052,9 @@ def correct_price(product_id: int, url_id: int, request: Request, db: Session = 
         latest.price = val
     else:
         pu.price_history.append(PriceHistory(price=val, currency=pu.currency,
-                                             in_stock=bool(pu.last_in_stock), checked_at=datetime.utcnow()))
+                                             in_stock=bool(pu.last_in_stock),
+                                             instore_in_stock=pu.last_instore_in_stock,
+                                             checked_at=datetime.utcnow()))
     db.commit()
     return _detail_redirect(product_id, msg="Price corrected")
 

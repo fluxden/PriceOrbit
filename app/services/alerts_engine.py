@@ -82,6 +82,10 @@ def _condition(rule, a: dict) -> bool:
 
     if t == AlertType.BACK_IN_STOCK:
         return a["prev_had_stock_info"] and not a["prev_in_stock"] and a["new_in_stock"]
+    if t == AlertType.OUT_OF_STOCK:
+        return a["prev_had_stock_info"] and a["prev_in_stock"] and not a["new_in_stock"]
+    if t == AlertType.STOCK_CHANGE_ANY:
+        return a["prev_had_stock_info"] and a["prev_in_stock"] != a["new_in_stock"]
 
     if new is None:
         return False
@@ -103,6 +107,8 @@ def _condition(rule, a: dict) -> bool:
         return thr is not None and (new - prev) >= thr
     if t == AlertType.PRICE_INCREASE_PERCENT:
         return thr is not None and prev > 0 and (new - prev) / prev * 100 >= thr
+    if t == AlertType.PRICE_CHANGE_ANY:
+        return new != prev
     return False
 
 
@@ -112,9 +118,12 @@ def _cooled_down(rule, now: datetime) -> bool:
     return (now - rule.last_triggered_at) >= timedelta(minutes=rule.cooldown_minutes or 0)
 
 
-def _direction(rule, prev, new) -> str:
-    if rule.type == AlertType.BACK_IN_STOCK:
-        return "back in stock"
+_STOCK_TYPES = (AlertType.BACK_IN_STOCK, AlertType.OUT_OF_STOCK, AlertType.STOCK_CHANGE_ANY)
+
+
+def _direction(rule, prev, new, *, in_stock: bool | None = None) -> str:
+    if rule.type in _STOCK_TYPES:
+        return "back in stock" if in_stock else "out of stock"
     if prev is not None and new is not None:
         if new < prev:
             return "dropped"
@@ -135,7 +144,7 @@ def _context(product, rule, a: dict) -> dict:
         "old_price": prev,
         "change_amount": abs(change) if change is not None else None,
         "percent_change": abs(pct) if pct is not None else None,
-        "direction": _direction(rule, prev, new),
+        "direction": _direction(rule, prev, new, in_stock=a["new_in_stock"]),
         "target_price": rule.threshold if rule.type == AlertType.PRICE_BELOW_TARGET else None,
         "currency": getattr(store, "currency", None) if store else None,
         "url": getattr(store, "url", None) if store else None,
@@ -147,6 +156,10 @@ def _reason(rule, a: dict) -> str:
     prev, new = a["prev_best"], a["new_best"]
     if rule.type == AlertType.BACK_IN_STOCK:
         return "Back in stock"
+    if rule.type == AlertType.OUT_OF_STOCK:
+        return "Out of stock"
+    if rule.type == AlertType.STOCK_CHANGE_ANY:
+        return "Back in stock" if a["new_in_stock"] else "Out of stock"
     if rule.type == AlertType.PRICE_BELOW_TARGET:
         return f"Price {new} at or below target {rule.threshold}"
     if prev is not None and new is not None:

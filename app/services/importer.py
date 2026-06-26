@@ -59,9 +59,15 @@ class ProductMetadata:
     description: str | None = None
     price: Decimal | None = None
     currency: str | None = None
+    # in_stock is the ONLINE availability; instore_in_stock is the separate
+    # in-store signal, left None unless a per-store adapter can read one.
     in_stock: bool | None = None
+    instore_in_stock: bool | None = None
     store_name: str | None = None
     icon_url: str | None = None
+    # Fetch engine that produced this result ("impersonate" | "httpx" |
+    # "scrapedo"). "scrapedo" means the paid API was hit and credits were spent.
+    engine: str | None = None
 
 
 def parse_price(value) -> Decimal | None:
@@ -301,32 +307,12 @@ def _from_microdata(soup: BeautifulSoup, meta: ProductMetadata) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Platform adapters (declarative per-platform selectors) + generic fallback
+# Shared DOM / selector helpers + generic fallback
+#
+# The per-store adapter recipes that lean on these helpers live in
+# ``app.services.site_adapters`` and are pulled in lazily by ``extract_metadata``
+# (a deferred import keeps the dependency one-directional and cycle-free).
 # ---------------------------------------------------------------------------
-
-@dataclass
-class SiteAdapter:
-    name: str
-    domains: tuple = ()
-    detect: object = None  # optional callable(soup) -> bool
-    name_sel: tuple = ()
-    image_sel: tuple = ()
-    price_sel: tuple = ()
-    price_attr: str | None = None
-    currency_sel: tuple = ()
-    in_stock_sel: tuple = ()
-    out_stock_sel: tuple = ()
-
-    def matches(self, host: str, soup: BeautifulSoup) -> bool:
-        if self.domains and any(d in host for d in self.domains):
-            return True
-        if self.detect is not None:
-            try:
-                return bool(self.detect(soup))
-            except Exception:  # noqa: BLE001
-                return False
-        return False
-
 
 def _select_one(soup, sel):
     try:
@@ -425,106 +411,6 @@ def _sel_image(soup, selectors) -> str | None:
     return None
 
 
-def _apply_adapter(adapter: SiteAdapter, soup: BeautifulSoup, meta: ProductMetadata) -> None:
-    meta.name = meta.name or _sel_text(soup, adapter.name_sel)
-    if not meta.image_url and adapter.image_sel:
-        meta.image_url = _sel_image(soup, adapter.image_sel)
-    if meta.price is None:
-        price, cur = _sel_price(soup, adapter.price_sel, adapter.price_attr)
-        if price is not None:
-            meta.price = price
-            meta.currency = meta.currency or cur
-    if meta.currency is None and adapter.currency_sel:
-        meta.currency = normalize_currency(_sel_text(soup, adapter.currency_sel))
-    if meta.in_stock is None:
-        if _sel_present(soup, adapter.out_stock_sel):
-            meta.in_stock = False
-        elif _sel_present(soup, adapter.in_stock_sel):
-            meta.in_stock = True
-
-
-def _detect_woocommerce(soup):
-    return bool(_select_one(soup, "body.woocommerce, body.woocommerce-page, .woocommerce"))
-
-
-def _detect_shopify(soup):
-    if _select_one(soup, "form[action*='/cart/add']"):
-        return True
-    for s in soup.find_all("script"):
-        if "Shopify" in (s.string or "") or "shopify" in (s.get("src") or ""):
-            return True
-    return False
-
-
-def _detect_magento(soup):
-    return bool(_select_one(soup, "[data-price-amount], body[class*='catalog-product']"))
-
-
-ADAPTERS = [
-    SiteAdapter(
-        name="Amazon",
-        domains=("amazon.",),
-        name_sel=("#productTitle", "h1#title"),
-        # Main gallery image. data-old-hires / data-a-dynamic-image carry the
-        # full-res URL(s); plain src is a low-res / sprite fallback.
-        image_sel=("#landingImage", "#imgBlkFront", "#ebooksImgBlkFront",
-                   "#main-image", "#imgTagWrapperId img"),
-        # Buy-box ids first so we don't grab a struck-through list price; the
-        # full price text lives in the screen-reader span ".a-offscreen".
-        price_sel=(
-            "#corePrice_feature_div .a-price .a-offscreen",
-            "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen",
-            "#corePrice_desktop .a-price .a-offscreen",
-            "#price_inside_buybox",
-            "#priceblock_ourprice", "#priceblock_dealprice", "#priceblock_saleprice",
-            "span.a-price span.a-offscreen", ".a-price .a-offscreen",
-        ),
-        in_stock_sel=("#add-to-cart-button", "#buy-now-button"),
-        out_stock_sel=("#outOfStock", "#availability .a-color-state"),
-    ),
-    SiteAdapter(
-        name="Best Buy",
-        domains=("bestbuy.com", "bestbuy.ca"),
-        name_sel=("h1.heading-5", ".sku-title h1", "h1[data-testid='product-title']"),
-        image_sel=("img.primary-image", ".primary-image img", ".primary-image",
-                   ".shop-media-gallery img", "img[data-testid='product-image']"),
-        price_sel=(".priceView-hero-price span[aria-hidden='true']",
-                   ".priceView-customer-price span[aria-hidden='true']",
-                   ".priceView-hero-price span", ".priceView-customer-price span"),
-        in_stock_sel=("button.add-to-cart-button:not([disabled])",),
-        out_stock_sel=("button.add-to-cart-button[disabled]",
-                       ".fulfillment-add-to-cart-button button[disabled]"),
-    ),
-    SiteAdapter(
-        name="WooCommerce",
-        detect=_detect_woocommerce,
-        name_sel=("h1.product_title", ".product_title"),
-        price_sel=("p.price ins .woocommerce-Price-amount", "p.price .woocommerce-Price-amount",
-                   ".summary .price .woocommerce-Price-amount", ".woocommerce-Price-amount.amount"),
-        in_stock_sel=("p.stock.in-stock", ".stock.in-stock"),
-        out_stock_sel=("p.stock.out-of-stock", ".stock.out-of-stock"),
-    ),
-    SiteAdapter(
-        name="Shopify",
-        detect=_detect_shopify,
-        name_sel=("h1.product__title", ".product__title", "h1.product-single__title"),
-        price_sel=("[data-product-price]", ".price__regular .price-item--regular",
-                   ".product__price", ".price-item--regular"),
-        out_stock_sel=(".sold-out", "button[name='add'][disabled]", ".product-form__buttons [disabled]"),
-        in_stock_sel=("form[action*='/cart/add'] [type='submit']", ".product-form__submit"),
-    ),
-    SiteAdapter(
-        name="Magento",
-        detect=_detect_magento,
-        name_sel=("h1.page-title .base", "h1.page-title", "[data-ui-id='page-title-wrapper']"),
-        price_sel=(".price-wrapper[data-price-amount]", "[data-price-type='finalPrice']", "[data-price-amount]"),
-        price_attr="data-price-amount",
-        in_stock_sel=(".stock.available", "div.available"),
-        out_stock_sel=(".stock.unavailable", "div.unavailable"),
-    ),
-]
-
-
 _GENERIC_PRICE_SEL = (
     "meta[itemprop='price']", "[itemprop='price']", "[data-price]", "[data-product-price]",
     ".product-price", ".current-price", ".sale-price", ".price", "#price", ".price-tag",
@@ -538,18 +424,52 @@ _BUY_TOKENS = ("add to cart", "add to bag", "add to basket", "add to trolley", "
 _OOS_TOKENS = ("sold out", "out of stock", "notify me", "email when available",
                "currently unavailable", "coming soon")
 
+# An enabled primary buy CTA — the strongest "available (online)" signal.
+_BUY_CTA_SEL = (
+    "#add-to-cart-button:not([disabled])", "#buy-now-button:not([disabled])",
+    "form[action*='/cart/add'] [type='submit']:not([disabled])",
+    "button[name='add']:not([disabled])", "[data-testid='add-to-cart']:not([disabled])",
+    "button.add-to-cart-button:not([disabled])", ".product-form__submit:not([disabled])",
+    ".add-to-cart:not([disabled])",
+)
+# A disabled / sold-out primary CTA — a scoped negative signal.
+_OOS_CTA_SEL = (
+    "#add-to-cart-button[disabled]", "#buy-now-button[disabled]",
+    "button[name='add'][disabled]", "button.add-to-cart-button[disabled]",
+    ".product-form__buttons [disabled]", ".sold-out",
+)
+# Elements that carry a *scoped* availability statement (not the whole page).
+_AVAIL_SCOPE_SEL = (
+    "[itemprop='availability']", ".availability", ".product-availability",
+    ".availability-message", ".stock", "[data-stock-status]",
+)
+
 
 def _text_stock(soup: BeautifulSoup) -> bool | None:
-    """Infer stock from button / badge text when nothing structured said so."""
-    blob = " | ".join(
-        el.get_text(" ", strip=True).lower()
-        for el in soup.select("button, a.button, a.btn, [type='submit'], .availability, .stock")
-        if el.get_text(strip=True)
-    )
-    if any(tok in blob for tok in _OOS_TOKENS):
-        return False
-    if any(tok in blob for tok in _BUY_TOKENS):
+    """Infer stock conservatively when nothing structured said so.
+
+    Order matters: a present, *enabled* add-to-cart CTA is the strongest positive
+    signal and wins outright. Negative signals are only trusted when scoped to the
+    buy box / a dedicated availability element — never a page-wide button sweep,
+    which used to flip the whole product OOS off an unrelated "notify me" /
+    "out of stock" widget (store-pickup modules, recommended carousels, variants).
+    Returns ``None`` (unknown) rather than guessing when no scoped signal is found.
+    """
+    if any(_select_one(soup, sel) for sel in _BUY_CTA_SEL):
         return True
+    if any(_select_one(soup, sel) for sel in _OOS_CTA_SEL):
+        return False
+    for sel in _AVAIL_SCOPE_SEL:
+        el = _select_one(soup, sel)
+        if not el:
+            continue
+        txt = el.get_text(" ", strip=True).lower()
+        if not txt:
+            continue
+        if any(tok in txt for tok in _OOS_TOKENS):
+            return False
+        if any(tok in txt for tok in _BUY_TOKENS):
+            return True
     return None
 
 
@@ -651,11 +571,13 @@ def extract_metadata(html: str, url: str) -> ProductMetadata:
     _from_microdata(soup, meta)
     _from_opengraph(soup, meta)
 
-    host = domain_of(url)
-    for adapter in ADAPTERS:
-        if adapter.matches(host, soup):
-            _apply_adapter(adapter, soup, meta)
-            break
+    # Per-store adapter library (lazy import breaks the import cycle: the adapter
+    # modules reuse this module's pure helpers).
+    from app.services.site_adapters import apply_adapter, match_adapter
+
+    adapter = match_adapter(domain_of(url), soup)
+    if adapter is not None:
+        apply_adapter(adapter, soup, meta)
 
     _from_selectors(soup, meta)
     _from_spec_table(soup, meta)
@@ -772,6 +694,7 @@ def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
             log.debug("import: %s served an anti-bot challenge via %s", dom, engine)
             meta = None  # don't accept a challenge page; try the next engine
         if meta is not None and meta.ok:
+            meta.engine = engine
             log.debug("import ok via %s: %r price=%s %s", engine, meta.name, meta.price, meta.currency)
             return meta  # has at least a name; good enough to add + monitor
 
