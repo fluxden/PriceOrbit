@@ -63,6 +63,7 @@ def _trigger_threshold_display(rule: AlertRule, currency: str | None) -> str:
 class ProductDetail:
     product: Product
     in_stock: bool = False
+    uses_api: bool = False  # an active listing's last check went through scrape.do (paid)
     currency: str | None = None
     mixed_currency: bool = False
     stores: list[dict] = field(default_factory=list)
@@ -92,6 +93,7 @@ def build_detail(db: Session, product: Product, time_format: str = "24",
                        (Counter(currencies).most_common(1)[0][0] if currencies else None))
     detail.mixed_currency = len(set(currencies)) > 1
     detail.in_stock = any(bool(u.last_in_stock) for u in urls)
+    detail.uses_api = any(u.last_engine == "scrapedo" for u in urls if u.active)
     detail.target_price = product.target_price
     detail.target_value = float(product.target_price) if product.target_price is not None else None
 

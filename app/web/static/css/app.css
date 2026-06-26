@@ -297,6 +297,14 @@ button { font-family: inherit; cursor: pointer; }
 .stock-badge--in { color: var(--good); background: var(--good-weak); }
 .stock-badge--out { color: var(--text-muted); background: var(--surface-2); }
 .stock-badge--paused { color: var(--warn); background: var(--warn-weak); }
+.stock-badge--api {
+  color: #b3540a; background: #fdecd2;
+  border-color: color-mix(in srgb, #f59e0b 50%, transparent);
+}
+[data-theme="dark"] .stock-badge--api {
+  color: #f6a740; background: #2a1d0b;
+  border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+}
 .stock-badge--restocked {
   color: var(--good); background: var(--good-weak);
   border-color: color-mix(in srgb, var(--good) 45%, transparent);

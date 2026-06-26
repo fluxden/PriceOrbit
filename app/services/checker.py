@@ -114,6 +114,7 @@ def check_url(db: "Session", pu: "ProductURL", *,
     pu.last_attempt_at = now
     pu.consecutive_failures = 0
     pu.last_error = None
+    pu.last_engine = meta.engine
     pu.price_history.append(PriceHistory(
         price=meta.price, currency=pu.currency,
         in_stock=bool(meta.in_stock), checked_at=now,

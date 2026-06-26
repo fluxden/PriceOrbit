@@ -98,6 +98,7 @@ class OverviewRow:
     status: str = "ok"   # monitoring health: ok | stale | failing | paused | off | new
     failing: bool = False
     stale: bool = False
+    uses_api: bool = False  # an active listing's last check went through scrape.do (paid)
 
 
 def _winning_url(urls: list[ProductURL]) -> ProductURL | None:
@@ -210,6 +211,7 @@ def build_rows(db: Session, monitor: str | None = None, owner_id: int | None = N
                 status=hs.status,
                 failing=hs.failing,
                 stale=hs.stale,
+                uses_api=any(u.last_engine == "scrapedo" for u in active_urls),
             )
         )
     return rows

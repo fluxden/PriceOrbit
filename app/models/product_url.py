@@ -62,6 +62,9 @@ class ProductURL(Base):
         Integer, default=0, server_default=text("0"), nullable=False
     )
     last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Fetch engine that satisfied the last successful check ("impersonate" |
+    # "httpx" | "scrapedo"). "scrapedo" drives the paid-API badge on the cards.
+    last_engine: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     last_in_stock: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
