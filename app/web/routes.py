@@ -1957,6 +1957,7 @@ def add_store(product_id: int, request: Request, db: Session = Depends(get_db), 
     if meta.ok and meta.price is not None:
         pu.baseline_price = pu.last_price = meta.price
         pu.last_in_stock = meta.in_stock
+        pu.last_engine = meta.engine
         pu.last_checked_at = datetime.utcnow()
         pu.price_history.append(PriceHistory(price=meta.price, currency=pu.currency,
                                              in_stock=bool(meta.in_stock), checked_at=datetime.utcnow()))

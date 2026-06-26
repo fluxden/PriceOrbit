@@ -34,6 +34,7 @@
       <div class="pb__badges">
         {% if detail.in_stock %}<span class="stock-badge stock-badge--in">In stock</span>
         {% else %}<span class="stock-badge stock-badge--out">Out of stock</span>{% endif %}
+        {% if detail.uses_api %}<span class="stock-badge stock-badge--api" title="Fetched via the scrape.do API — uses paid credits">API</span>{% endif %}
         {% if detail.stats.current %}<span class="best-badge">Best price <strong>{{ detail.stats.current }}</strong>{% if detail.best_store %} at {{ detail.best_store }}{% endif %}</span>{% endif %}
         {% if detail.product.target_price %}<span class="target-badge">Target {{ detail.product.target_price }}</span>{% endif %}
         {% if detail.deal %}

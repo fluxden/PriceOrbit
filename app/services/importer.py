@@ -62,6 +62,9 @@ class ProductMetadata:
     in_stock: bool | None = None
     store_name: str | None = None
     icon_url: str | None = None
+    # Fetch engine that produced this result ("impersonate" | "httpx" |
+    # "scrapedo"). "scrapedo" means the paid API was hit and credits were spent.
+    engine: str | None = None
 
 
 def parse_price(value) -> Decimal | None:
@@ -772,6 +775,7 @@ def import_from_url(url: str, *, polite: bool = True) -> ProductMetadata:
             log.debug("import: %s served an anti-bot challenge via %s", dom, engine)
             meta = None  # don't accept a challenge page; try the next engine
         if meta is not None and meta.ok:
+            meta.engine = engine
             log.debug("import ok via %s: %r price=%s %s", engine, meta.name, meta.price, meta.currency)
             return meta  # has at least a name; good enough to add + monitor
 
