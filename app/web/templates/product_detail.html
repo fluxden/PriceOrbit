@@ -32,8 +32,10 @@
         {% for t in (tags_text or '').split(',') if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endfor %}
       </div>
       <div class="pb__badges">
-        {% if detail.in_stock %}<span class="stock-badge stock-badge--in">In stock</span>
-        {% else %}<span class="stock-badge stock-badge--out">Out of stock</span>{% endif %}
+        <span class="stock-badge {{ 'stock-badge--in' if detail.in_stock else 'stock-badge--out' }}"
+              title="{{ 'Available online' if detail.in_stock else 'Out of stock online' }}">Online Stock</span>
+        {% if detail.has_instore %}<span class="stock-badge {{ 'stock-badge--in' if detail.instore_in_stock else 'stock-badge--out' }}"
+              title="{{ 'Available in store' if detail.instore_in_stock else 'Out of stock in store' }}">In store</span>{% endif %}
         {% if detail.uses_api %}<span class="stock-badge stock-badge--api" title="Fetched via the scrape.do API — uses paid credits">API</span>{% endif %}
         {% if detail.stats.current %}<span class="best-badge">Best price <strong>{{ detail.stats.current }}</strong>{% if detail.best_store %} at {{ detail.best_store }}{% endif %}</span>{% endif %}
         {% if detail.product.target_price %}<span class="target-badge">Target {{ detail.product.target_price }}</span>{% endif %}
@@ -131,7 +133,8 @@
         <div class="store__name">{{ s.store }}{% if s.is_primary %}<span class="store__primary">primary</span>{% endif %}</div>
         <div class="store__sub">
           <span class="store__price">{{ s.last_price_display }}</span>
-          <span class="stock-dot {{ 'is-in' if s.last_in_stock else 'is-out' }}"></span>
+          <span class="stock-dot {{ 'is-in' if s.last_in_stock else 'is-out' }}" title="{{ 'In stock online' if s.last_in_stock else 'Out of stock online' }}"></span>
+          {% if s.last_instore_in_stock is not none %}<span class="stock-dot {{ 'is-in' if s.last_instore_in_stock else 'is-out' }}" title="{{ 'In stock in store' if s.last_instore_in_stock else 'Out of stock in store' }}"></span>{% endif %}
           <span class="store__sched">⟳ {{ s.schedule_label }}</span>
           {% if s.last_checked_at %}<span class="store__checked">· checked {{ s.last_checked_at | localdt('%b %d') }}</span>{% endif %}
           {% if s.consecutive_failures %}<span class="store__failing" title="{{ s.last_error or 'Recent checks failed' }}">⚠ {{ s.consecutive_failures }} failed</span>{% endif %}

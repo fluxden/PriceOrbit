@@ -59,7 +59,8 @@ def _format_context(ctx: dict, now: datetime, cfg: dict | None = None) -> dict:
 
 
 def _render(cfg: dict, decision, now: datetime) -> tuple[str, str]:
-    is_stock = decision.type == AlertType.BACK_IN_STOCK
+    is_stock = decision.type in (
+        AlertType.BACK_IN_STOCK, AlertType.OUT_OF_STOCK, AlertType.STOCK_CHANGE_ANY)
     subj_key = "tpl_stock_subject" if is_stock else "tpl_price_subject"
     body_key = "tpl_stock_body" if is_stock else "tpl_price_body"
     fmt = _format_context(decision.context, now, cfg)

@@ -66,7 +66,10 @@ class ProductURL(Base):
     # "httpx" | "scrapedo"). "scrapedo" drives the paid-API badge on the cards.
     last_engine: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # last_in_stock is the ONLINE availability signal. last_instore_in_stock is the
+    # separate in-store signal (NULL when the store doesn't report one).
     last_in_stock: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_instore_in_stock: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

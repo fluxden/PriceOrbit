@@ -110,14 +110,22 @@ def check_url(db: "Session", pu: "ProductURL", *,
         pu.currency = meta.currency
     if meta.in_stock is not None:
         pu.last_in_stock = meta.in_stock
+    if meta.instore_in_stock is not None:
+        pu.last_instore_in_stock = meta.instore_in_stock
     pu.last_checked_at = now
     pu.last_attempt_at = now
     pu.consecutive_failures = 0
     pu.last_error = None
     pu.last_engine = meta.engine
+    # When this check couldn't determine stock (None = unknown), carry the
+    # listing's last known state into the history row instead of writing a
+    # phantom False that would render as a false "Out of stock".
+    recorded_stock = meta.in_stock if meta.in_stock is not None else pu.last_in_stock
+    recorded_instore = (meta.instore_in_stock if meta.instore_in_stock is not None
+                        else pu.last_instore_in_stock)
     pu.price_history.append(PriceHistory(
         price=meta.price, currency=pu.currency,
-        in_stock=bool(meta.in_stock), checked_at=now,
+        in_stock=bool(recorded_stock), instore_in_stock=recorded_instore, checked_at=now,
     ))
     res.price, res.currency, res.in_stock, res.recorded = meta.price, pu.currency, meta.in_stock, True
     return res

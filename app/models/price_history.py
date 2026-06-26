@@ -36,9 +36,12 @@ class PriceHistory(Base):
     )
     price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # in_stock is the ONLINE availability at check time; instore_in_stock is the
+    # separate in-store signal (NULL when the store doesn't report one).
     in_stock: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("0"), nullable=False
     )
+    instore_in_stock: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     checked_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False, index=True
     )

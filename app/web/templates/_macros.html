@@ -26,7 +26,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="9" cy="9" r="1.6"/></svg>
       </span>
     {% endif %}
-    <span class="stock-dot {{ 'is-in' if row.in_stock else 'is-out' }}" title="{{ 'In stock' if row.in_stock else 'Out of stock' }}"></span>
+    <span class="stock-dot {{ 'is-in' if row.in_stock else 'is-out' }}" title="{{ 'In stock online' if row.in_stock else 'Out of stock online' }}"></span>
   </a>
 
   <div class="product__info">
@@ -63,12 +63,13 @@
   </div>
 
   <div class="product__stock">
-    {% if row.recently_restocked %}
-      <span class="stock-badge stock-badge--restocked">Back in stock</span>
-    {% elif row.in_stock %}
-      <span class="stock-badge stock-badge--in">In stock</span>
-    {% else %}
-      <span class="stock-badge stock-badge--out">Out of stock</span>
+    {# Online availability — always shown; green = in stock online, gray = out. #}
+    <span class="stock-badge {{ 'stock-badge--in' if row.in_stock else 'stock-badge--out' }}"
+          title="{{ 'Available online' if row.in_stock else 'Out of stock online' }}">Online Stock</span>
+    {# In-store availability — only when the store reports it. #}
+    {% if row.has_instore %}
+      <span class="stock-badge {{ 'stock-badge--in' if row.instore_in_stock else 'stock-badge--out' }}"
+            title="{{ 'Available in store' if row.instore_in_stock else 'Out of stock in store' }}">In store</span>
     {% endif %}
     {% if row.uses_api %}<span class="stock-badge stock-badge--api" title="Fetched via the scrape.do API — uses paid credits">API</span>{% endif %}
     {% if row.paused %}<span class="stock-badge stock-badge--paused">Paused</span>{% endif %}
