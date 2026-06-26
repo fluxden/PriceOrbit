@@ -33,11 +33,15 @@ class AlertType:
     PRICE_INCREASE_ANY = "price_increase_any"  # any increase vs the previous price
     PRICE_INCREASE_AMOUNT = "price_increase_amount"    # increase of >= threshold (currency)
     PRICE_INCREASE_PERCENT = "price_increase_percent"  # increase of >= threshold percent
+    PRICE_CHANGE_ANY = "price_change_any"      # any change up or down vs the previous price
     BACK_IN_STOCK = "back_in_stock"            # stock transitions to available
+    OUT_OF_STOCK = "out_of_stock"              # stock transitions to unavailable
+    STOCK_CHANGE_ANY = "stock_change_any"      # stock toggles in either direction
 
     ALL = (
         PRICE_DROP_ANY, PRICE_DROP_AMOUNT, PRICE_DROP_PERCENT, PRICE_BELOW_TARGET,
-        PRICE_INCREASE_ANY, PRICE_INCREASE_AMOUNT, PRICE_INCREASE_PERCENT, BACK_IN_STOCK,
+        PRICE_INCREASE_ANY, PRICE_INCREASE_AMOUNT, PRICE_INCREASE_PERCENT, PRICE_CHANGE_ANY,
+        BACK_IN_STOCK, OUT_OF_STOCK, STOCK_CHANGE_ANY,
     )
 
 

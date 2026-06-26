@@ -38,8 +38,8 @@
         <h3>{{ preview.name }}</h3>
         <div class="preview-card__row">
           <span class="price">{% if preview.price is not none %}{{ preview.currency or '' }} {{ '%.2f'|format(preview.price) }}{% else %}Price not found{% endif %}</span>
-          {% if preview.in_stock is true %}<span class="stock-badge stock-badge--in">In stock</span>
-          {% elif preview.in_stock is false %}<span class="stock-badge stock-badge--out">Out of stock</span>{% endif %}
+          {% if preview.in_stock is true %}<span class="stock-badge stock-badge--in" title="Available online">Online</span>
+          {% elif preview.in_stock is false %}<span class="stock-badge stock-badge--out" title="Out of stock online">Online</span>{% endif %}
         </div>
         {% if preview.model_number %}<div class="preview-card__meta">Model {{ preview.model_number }}</div>{% endif %}
       </div>

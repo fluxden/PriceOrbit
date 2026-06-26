@@ -54,9 +54,11 @@ scrape.do is tried **only as a last resort** — after the free built-in engines
 are blocked — so credits are spent solely on the hard stores. Normal stores
 never touch it.
 
+> ⚠️ **Free Accounts DO NOT need a payment method. NO RISK. Highly Recommeneded for full functionality.**
+>
 > ⚠️ **Free accounts get only 1,000 credits per month.** A protected fetch
 > (residential proxies + JS rendering — the default needed to beat Akamai) costs
-> **~25 credits**, so the free tier is roughly **40 protected-store fetches per
+> **10-25 credits**, so the free tier is roughly **40 protected-store fetches per
 > month**. Credits renew monthly and only *successful* fetches are charged.
 >
 > **Keep checks on protected products infrequent.** Tracking an Akamai-protected
